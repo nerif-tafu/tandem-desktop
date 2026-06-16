@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "casa.tafu.tandem",
+  "description": "Tandem desktop publisher capabilities",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-app-commands"
+  ]
+}

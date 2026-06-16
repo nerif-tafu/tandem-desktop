@@ -1,0 +1,50 @@
+[package]
+name = "tandem-client"
+version = "0.1.0"
+description = "Tandem desktop publisher client"
+authors = ["tafu.casa"]
+edition = "2021"
+
+[lib]
+name = "tandem_client_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["image-png", "image-ico"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+enigo = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+xcap = "0.0.14"
+nokhwa = { version = "0.10", features = ["input-native"] }
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+base64 = "0.22"
+grafton-ndi = { version = "0.13", default-features = true, optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }
+tokio-tungstenite = "0.26"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_Media",
+  "Win32_System_Power",
+  "Win32_System_Threading",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+] }
+windows-capture = "2.0"
+
+[features]
+default = ["ndi"]
+ndi = ["dep:grafton-ndi"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+strip = true

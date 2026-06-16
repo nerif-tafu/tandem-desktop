@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.turbo
+*.log
+.env
+.env.local
+.DS_Store
+Thumbs.db
+apps/client/src-tauri/target
+apps/client/src-tauri/gen
+apps/web/dist
+apps/server/dist
+coverage
+*.tsbuildinfo

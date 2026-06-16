@@ -1,0 +1,21 @@
+[[permission]]
+identifier = "allow-app-commands"
+description = "Enables Tandem desktop API commands."
+commands.allow = [
+  "is_dev_mode",
+  "is_ndi_available",
+  "get_ndi_discovery_server",
+  "set_ndi_discovery_server",
+  "presentation_forward",
+  "presentation_back",
+  "set_presentation_target",
+  "get_presentation_target",
+  "list_capture_sources",
+  "list_presentation_windows",
+  "set_slot_source",
+  "get_slot_states",
+  "refresh_slot_preview",
+  "start_slot_video",
+  "stop_slot_video",
+  "get_video_server_port",
+]

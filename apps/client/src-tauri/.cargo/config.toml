@@ -1,0 +1,2 @@
+[env]
+NDI_SDK_DIR = { value = "../ndi-sdk", relative = true }
