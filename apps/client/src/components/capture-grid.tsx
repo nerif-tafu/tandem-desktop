@@ -12,6 +12,7 @@ import {
   type StreamSlot,
 } from '@tandem/shared';
 
+import { useClientDiagnostics } from '../hooks/use-client-diagnostics';
 import { useCaptureSources } from '../hooks/use-capture-sources';
 import { useLiveKitPublisher } from '../hooks/use-livekit-publisher';
 import { useSlotCapture } from '../hooks/use-slot-capture';
@@ -103,6 +104,7 @@ function CaptureGridContent({
   const { sources, slots, loading: sourcesLoading, error, assignSource, refreshSources } =
     useCaptureSources(true);
   const captureSuspended = useSuspendCaptureWhenInactive(true);
+  useClientDiagnostics(true);
   const [captureResumeNonce, setCaptureResumeNonce] = useState(0);
   const captureSuspendedRef = useRef(captureSuspended);
 

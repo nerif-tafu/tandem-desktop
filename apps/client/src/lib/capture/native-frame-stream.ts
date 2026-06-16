@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 interface FrameStreamSession {
   stream: MediaStream;
   cleanup: () => void;
@@ -9,11 +11,36 @@ interface PendingFrame {
   pixels: Uint8ClampedArray;
 }
 
+export interface FrameStreamCounters {
+  received: number;
+  accepted: number;
+  droppedBusy: number;
+  droppedBackpressure: number;
+}
+
 function stopStreamTracks(stream: MediaStream): void {
   stream.getTracks().forEach((track) => track.stop());
 }
 
-export function createMediaStreamFromFrameSocket(wsUrl: string): Promise<FrameStreamSession> {
+function canAcceptFrame(
+  writer: WritableStreamDefaultWriter<VideoFrame>,
+  pumping: boolean,
+): 'accept' | 'busy' | 'backpressure' {
+  if (pumping) {
+    return 'busy';
+  }
+
+  if (writer.desiredSize !== null && writer.desiredSize <= 0) {
+    return 'backpressure';
+  }
+
+  return 'accept';
+}
+
+export function createMediaStreamFromFrameSocket(
+  wsUrl: string,
+  counters?: FrameStreamCounters,
+): Promise<FrameStreamSession> {
   const Generator = (
     globalThis as typeof globalThis & {
       MediaStreamTrackGenerator?: new (init: { kind: 'video' }) => MediaStreamTrack & {
@@ -76,7 +103,6 @@ export function createMediaStreamFromFrameSocket(wsUrl: string): Promise<FrameSt
         const next = pending;
         pending = null;
 
-        // Dedicated buffer per frame so async VideoFrame writes cannot race reused memory.
         const frame = new VideoFrame(next.pixels, {
           format: 'RGBA',
           codedWidth: next.width,
@@ -120,6 +146,20 @@ export function createMediaStreamFromFrameSocket(wsUrl: string): Promise<FrameSt
         return;
       }
 
+      counters && (counters.received += 1);
+
+      const acceptance = canAcceptFrame(writer, pumping);
+      if (acceptance !== 'accept') {
+        if (counters) {
+          if (acceptance === 'busy') {
+            counters.droppedBusy += 1;
+          } else {
+            counters.droppedBackpressure += 1;
+          }
+        }
+        return;
+      }
+
       const buffer = event.data;
       if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 8) {
         return;
@@ -132,6 +172,10 @@ export function createMediaStreamFromFrameSocket(wsUrl: string): Promise<FrameSt
 
       if (width === 0 || height === 0 || buffer.byteLength - 8 !== expectedLength) {
         return;
+      }
+
+      if (counters) {
+        counters.accepted += 1;
       }
 
       pending = {

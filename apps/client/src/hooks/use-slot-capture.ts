@@ -3,7 +3,9 @@ import { useEffect, useRef } from 'react';
 import type { StreamSlot } from '@tandem/shared';
 
 import { useSlotPreviewStreams } from '../contexts/slot-preview-streams';
+import { registerFrameStreamCounters, unregisterFrameStreamCounters } from '../lib/diagnostics';
 import { startSlotCapture } from '../lib/capture/start-slot-capture';
+import type { FrameStreamCounters } from '../lib/capture/native-frame-stream';
 import type { SlotCaptureState } from '../types/capture';
 
 interface SlotSession {
@@ -22,9 +24,20 @@ export function useSlotCapture(
 ) {
   const { setSlotStream, setCaptureError } = useSlotPreviewStreams();
   const sessionsRef = useRef<Map<StreamSlot, SlotSession>>(new Map());
+  const countersRef = useRef<Map<StreamSlot, FrameStreamCounters>>(new Map());
   const attemptRef = useRef<Map<StreamSlot, number>>(new Map());
   const syncRef = useRef<Promise<void>>(Promise.resolve());
   const lastResumeNonceRef = useRef(resumeNonce);
+
+  const getCounters = (slot: StreamSlot): FrameStreamCounters => {
+    let counters = countersRef.current.get(slot);
+    if (!counters) {
+      counters = { received: 0, accepted: 0, droppedBusy: 0, droppedBackpressure: 0 };
+      countersRef.current.set(slot, counters);
+      registerFrameStreamCounters(slot, counters);
+    }
+    return counters;
+  };
 
   useEffect(() => {
     const forceRestart = lastResumeNonceRef.current !== resumeNonce;
@@ -80,7 +93,7 @@ export function useSlotCapture(
           setCaptureError(slot, null);
 
           try {
-            const { stream, cleanup } = await startSlotCapture(slot, source);
+            const { stream, cleanup } = await startSlotCapture(slot, source, getCounters(slot));
 
             if (attemptRef.current.get(slot) !== attempt) {
               await cleanup();
@@ -126,6 +139,10 @@ export function useSlotCapture(
         }
 
         sessionsRef.current.clear();
+        for (const slot of countersRef.current.keys()) {
+          unregisterFrameStreamCounters(slot);
+        }
+        countersRef.current.clear();
       });
     };
   }, []);

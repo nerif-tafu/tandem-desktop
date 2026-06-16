@@ -7,8 +7,8 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
-
 use futures_util::{SinkExt, StreamExt};
+use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio_tungstenite::{
     accept_hdr_async,
@@ -29,10 +29,25 @@ pub struct CapturedFrame {
 /// Cap frame fan-out to the local websocket consumers (~30fps) to limit memory churn.
 const MIN_PUBLISH_INTERVAL: Duration = Duration::from_millis(33);
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SlotFrameStats {
+    pub published: u64,
+    pub publish_throttled: u64,
+    pub websocket_sent: u64,
+    pub websocket_skipped: u64,
+    pub latest_width: u32,
+    pub latest_height: u32,
+    pub latest_bytes: usize,
+}
+
 pub struct FrameSlot {
     latest: Mutex<Option<CapturedFrame>>,
     generation: AtomicU64,
     last_publish: Mutex<Option<Instant>>,
+    published: AtomicU64,
+    publish_throttled: AtomicU64,
+    websocket_sent: AtomicU64,
+    websocket_skipped: AtomicU64,
 }
 
 impl Default for FrameSlot {
@@ -41,6 +56,10 @@ impl Default for FrameSlot {
             latest: Mutex::new(None),
             generation: AtomicU64::new(0),
             last_publish: Mutex::new(None),
+            published: AtomicU64::new(0),
+            publish_throttled: AtomicU64::new(0),
+            websocket_sent: AtomicU64::new(0),
+            websocket_skipped: AtomicU64::new(0),
         }
     }
 }
@@ -56,11 +75,13 @@ impl FrameSlot {
             })
             .unwrap_or(false)
         {
+            self.publish_throttled.fetch_add(1, Ordering::Relaxed);
             return;
         }
         *last_publish = Some(now);
 
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
+        self.published.fetch_add(1, Ordering::Relaxed);
         *self.latest.lock().expect("frame slot lock") = Some(CapturedFrame {
             width,
             height,
@@ -80,6 +101,24 @@ impl FrameSlot {
     pub fn clear(&self) {
         *self.latest.lock().expect("frame slot lock") = None;
         *self.last_publish.lock().expect("frame slot publish lock") = None;
+    }
+
+    pub fn stats(&self) -> SlotFrameStats {
+        let latest = self.latest.lock().expect("frame slot lock");
+        let (latest_width, latest_height, latest_bytes) = latest
+            .as_ref()
+            .map(|frame| (frame.width, frame.height, frame.pixels.len()))
+            .unwrap_or((0, 0, 0));
+
+        SlotFrameStats {
+            published: self.published.load(Ordering::Relaxed),
+            publish_throttled: self.publish_throttled.load(Ordering::Relaxed),
+            websocket_sent: self.websocket_sent.load(Ordering::Relaxed),
+            websocket_skipped: self.websocket_skipped.load(Ordering::Relaxed),
+            latest_width,
+            latest_height,
+            latest_bytes,
+        }
     }
 }
 
@@ -147,6 +186,15 @@ impl FrameServer {
     pub fn socket_url(&self, slot: &str) -> String {
         format!("ws://127.0.0.1:{}/ws/{}", self.port, slot)
     }
+
+    pub fn slot_stats(&self) -> HashMap<String, SlotFrameStats> {
+        self.slots
+            .lock()
+            .expect("frame slots lock")
+            .iter()
+            .map(|(slot, frame_slot)| (slot.clone(), frame_slot.stats()))
+            .collect()
+    }
 }
 
 async fn run_server(
@@ -213,6 +261,7 @@ async fn handle_client(stream: tokio::net::TcpStream, slots: SlotMap) -> Result<
                 };
 
                 if frame.generation == last_generation {
+                    frame_slot.websocket_skipped.fetch_add(1, Ordering::Relaxed);
                     continue;
                 }
 
@@ -225,6 +274,7 @@ async fn handle_client(stream: tokio::net::TcpStream, slots: SlotMap) -> Result<
                 sink.send(Message::Binary(packet.into()))
                     .await
                     .map_err(|error| error.to_string())?;
+                frame_slot.websocket_sent.fetch_add(1, Ordering::Relaxed);
             }
         }
     }

@@ -8,13 +8,21 @@ use std::{
     time::Duration,
 };
 
-use super::frame_server::{FrameServer, FrameSlot};
+use serde::Serialize;
+
+use super::frame_server::{FrameServer, FrameSlot, SlotFrameStats};
 use super::sources::CaptureError;
 use super::types::{CaptureSource, CaptureSourceKind};
 #[cfg(windows)]
 use super::windows_video::WindowsCaptureSession;
 
 const STOP_JOIN_TIMEOUT: Duration = Duration::from_secs(3);
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CaptureDiagnostics {
+    pub active_slots: Vec<String>,
+    pub slots: HashMap<String, SlotFrameStats>,
+}
 
 struct SlotCaptureWorker {
     stop: Arc<AtomicBool>,
@@ -117,6 +125,14 @@ impl VideoCaptureManager {
         }
 
         self.server.unregister_slot(slot);
+    }
+
+    pub fn diagnostics(&self) -> CaptureDiagnostics {
+        let workers = self.workers.lock().expect("video workers lock");
+        CaptureDiagnostics {
+            active_slots: workers.keys().cloned().collect(),
+            slots: self.server.slot_stats(),
+        }
     }
 }
 

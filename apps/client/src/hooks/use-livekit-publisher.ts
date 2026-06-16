@@ -10,7 +10,7 @@ import { getSlotVideoPublishOptions } from '../lib/livekit-publish-options';
 
 interface SlotPublisher {
   track: MediaStreamTrack;
-  stream: MediaStream;
+  sourceStream: MediaStream;
 }
 
 export function useLiveKitPublisher(
@@ -76,7 +76,6 @@ export function useLiveKitPublisher(
       for (const [slot, publisher] of publishersRef.current.entries()) {
         void room.localParticipant.unpublishTrack(publisher.track);
         publisher.track.stop();
-        publisher.stream.getTracks().forEach((track) => track.stop());
         publishersRef.current.delete(slot);
       }
 
@@ -102,11 +101,10 @@ export function useLiveKitPublisher(
         const stream = streams[slot as StreamSlot];
         const publisher = publishersRef.current.get(slot);
 
-        if (!activeSlotsRef.current.has(slot) || !stream || publisher?.stream !== stream) {
+        if (!activeSlotsRef.current.has(slot) || !stream || publisher?.sourceStream !== stream) {
           if (publisher) {
             void room.localParticipant.unpublishTrack(publisher.track);
             publisher.track.stop();
-            publisher.stream.getTracks().forEach((track) => track.stop());
             publishersRef.current.delete(slot);
           }
         }
@@ -118,18 +116,24 @@ export function useLiveKitPublisher(
         }
 
         const publisher = publishersRef.current.get(slot);
-        if (publisher?.stream === stream) {
+        if (publisher?.sourceStream === stream) {
           continue;
         }
 
-        const track = stream.getVideoTracks()[0];
-        if (!track) {
+        const sourceTrack = stream.getVideoTracks()[0];
+        if (!sourceTrack) {
           continue;
         }
 
-        publishersRef.current.set(slot, { track, stream });
+        if (publisher) {
+          void room.localParticipant.unpublishTrack(publisher.track);
+          publisher.track.stop();
+        }
 
-        void room.localParticipant.publishTrack(track, getSlotVideoPublishOptions(slot));
+        const publishTrack = sourceTrack.clone();
+        publishersRef.current.set(slot, { track: publishTrack, sourceStream: stream });
+
+        void room.localParticipant.publishTrack(publishTrack, getSlotVideoPublishOptions(slot));
       }
     };
 

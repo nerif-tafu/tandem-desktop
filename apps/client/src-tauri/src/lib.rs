@@ -1,4 +1,5 @@
 mod capture;
+mod logging;
 mod ndi_config;
 mod presentation;
 mod window_icon;
@@ -6,8 +7,8 @@ mod window_icon;
 use std::sync::Mutex;
 
 use capture::{
-    list_all_sources, CaptureManager, CaptureSource, PresentationWindow, SlotCaptureState,
-    VideoCaptureManager, STREAM_SLOTS, slot_label,
+    list_all_sources, CaptureDiagnostics, CaptureManager, CaptureSource, PresentationWindow,
+    SlotCaptureState, VideoCaptureManager, STREAM_SLOTS, slot_label,
 };
 use presentation::KeyboardPresentationController;
 use tauri::Manager;
@@ -38,10 +39,6 @@ fn stage_ndi_runtime(app: &tauri::App) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .init();
-
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             is_dev_mode,
@@ -60,8 +57,20 @@ pub fn run() {
             start_slot_video,
             stop_slot_video,
             get_video_server_port,
+            append_client_log,
+            get_client_log_path,
+            get_capture_diagnostics,
         ])
         .setup(|app| {
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                logging::init(&log_dir);
+            } else {
+                tracing_subscriber::fmt()
+                    .with_env_filter("info")
+                    .init();
+                tracing::warn!("could not resolve app log directory; logging to stdout only");
+            }
+
             #[cfg(windows)]
             capture::disable_background_throttling();
 
@@ -84,6 +93,8 @@ pub fn run() {
             if let Err(error) = window_icon::apply_window_icons(app.handle()) {
                 tracing::warn!(%error, "failed to apply window icon");
             }
+
+            capture::spawn_diagnostics_task(app.handle().clone());
 
             Ok(())
         })
@@ -278,6 +289,27 @@ fn get_video_server_port(
         .map_err(|_| "Video capture manager unavailable".to_string())?;
 
     Ok(guard.server_port())
+}
+
+#[tauri::command]
+fn append_client_log(line: String) -> Result<(), String> {
+    logging::append_client_log(&line)
+}
+
+#[tauri::command]
+fn get_client_log_path() -> Result<Option<String>, String> {
+    Ok(logging::log_path_hint())
+}
+
+#[tauri::command]
+fn get_capture_diagnostics(
+    video: tauri::State<'_, Mutex<VideoCaptureManager>>,
+) -> Result<capture::CaptureDiagnostics, String> {
+    let guard = video
+        .lock()
+        .map_err(|_| "Video capture manager unavailable".to_string())?;
+
+    Ok(guard.diagnostics())
 }
 
 fn build_slot_state(
