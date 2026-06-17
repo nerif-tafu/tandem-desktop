@@ -9,6 +9,8 @@ pnpm install
 pnpm dev
 ```
 
+`pnpm dev` builds `@tandem/shared` and forces `NDI_SDK_DIR` to `apps/client/ndi-sdk`. If you previously set a system-wide `NDI_SDK_DIR` pointing at the old monorepo, remove it or run via `pnpm dev` so the correct SDK path is used.
+
 The app expects a running Tandem server (default `http://127.0.0.1:3841`). See [tandem-server](https://github.com/nerif-tafu/tandem-server) for local setup.
 
 ## Build

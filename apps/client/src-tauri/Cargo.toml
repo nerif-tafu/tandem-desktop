@@ -20,7 +20,7 @@ enigo = "0.3"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
-xcap = "0.0.14"
+xcap = "0.6.2"
 nokhwa = { version = "0.10", features = ["input-native"] }
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
 base64 = "0.22"

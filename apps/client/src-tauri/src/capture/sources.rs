@@ -40,13 +40,19 @@ pub fn list_presentation_windows() -> Result<Vec<super::types::PresentationWindo
     let mut windows = Vec::new();
 
     for window in xcap::Window::all().map_err(|error| CaptureError::ListFailed(error.to_string()))? {
-        let title = window.title();
+        let title = window
+            .title()
+            .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
         if title.trim().is_empty() {
             continue;
         }
 
-        let id = window.id();
-        let app_name = window.app_name();
+        let id = window
+            .id()
+            .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
+        let app_name = window
+            .app_name()
+            .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
 
         windows.push(super::types::PresentationWindow {
             id: format!("window:{id}"),
@@ -107,10 +113,18 @@ fn list_screens() -> Result<Vec<CaptureSource>, CaptureError> {
         for monitor in
             xcap::Monitor::all().map_err(|error| CaptureError::ListFailed(error.to_string()))?
         {
-            let id = monitor.id();
-            let name = monitor.name();
-            let width = monitor.width();
-            let height = monitor.height();
+            let id = monitor
+                .id()
+                .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
+            let name = monitor
+                .name()
+                .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
+            let width = monitor
+                .width()
+                .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
+            let height = monitor
+                .height()
+                .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
 
             sources.push(CaptureSource {
                 id: format!("screen:{id}"),
@@ -162,7 +176,12 @@ fn capture_monitor_preview(source_id: &str) -> Result<String, CaptureError> {
         let monitor = xcap::Monitor::all()
             .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?
             .into_iter()
-            .find(|monitor| monitor.id() == monitor_id)
+            .find(|monitor| {
+                monitor
+                    .id()
+                    .map(|id| id == monitor_id)
+                    .unwrap_or(false)
+            })
             .ok_or_else(|| CaptureError::SourceNotFound(source_id.to_string()))?;
 
         let image = monitor

@@ -36,6 +36,8 @@ jobs:
         run: pnpm --filter @tandem/shared build
 
       - name: Build portable exe
+        env:
+          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
         run: pnpm --filter @tandem/client build
 
       - name: Upload artifact

@@ -29,6 +29,8 @@ jobs:
         run: pnpm --filter @tandem/shared build
 
       - name: Build Windows executable
+        env:
+          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
         run: pnpm --filter @tandem/client build
 
       - name: Stage release asset
@@ -63,6 +65,8 @@ jobs:
         run: pnpm --filter @tandem/shared build
 
       - name: Build macOS dmg
+        env:
+          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
         run: pnpm --filter @tandem/client build
 
       - name: Stage release asset
@@ -92,7 +96,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev
 
       - name: Install dependencies
         run: pnpm install
@@ -101,6 +105,8 @@ jobs:
         run: pnpm --filter @tandem/shared build
 
       - name: Build Linux AppImage
+        env:
+          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
         run: pnpm --filter @tandem/client exec tauri build -- --no-default-features
 
       - name: Stage release asset

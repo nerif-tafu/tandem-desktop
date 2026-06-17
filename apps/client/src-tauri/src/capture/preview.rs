@@ -240,7 +240,12 @@ fn find_monitor(monitor_id: u32) -> Result<Monitor, CaptureError> {
         xcap::Monitor::all()
             .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?
             .into_iter()
-            .find(|monitor| monitor.id() == monitor_id)
+            .find(|monitor| {
+                monitor
+                    .id()
+                    .map(|id| id == monitor_id)
+                    .unwrap_or(false)
+            })
             .ok_or_else(|| CaptureError::SourceNotFound(format!("screen:{monitor_id}")))
     }
 }
