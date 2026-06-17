@@ -27,7 +27,7 @@ if (-not $ReleaseTag) { $ReleaseTag = $env:TANDEM_RELEASE_TAG }
 
 if (-not $LinuxHost) { $LinuxHost = "192.168.3.210" }
 if (-not $LinuxUser) { $LinuxUser = "finn-rm" }
-if (-not $ReleaseTag) { $ReleaseTag = "v1.1.3" }
+if (-not $ReleaseTag) { $ReleaseTag = "v1.1.5" }
 
 $Remote = "${LinuxUser}@${LinuxHost}"
 $AppImageUrl = "https://github.com/nerif-tafu/tandem-desktop/releases/download/${ReleaseTag}/Tandem-linux-x86_64.AppImage"
