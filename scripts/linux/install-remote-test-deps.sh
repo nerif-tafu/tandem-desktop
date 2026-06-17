@@ -18,5 +18,11 @@ if ! python3 -c "import gi; gi.require_version('Atspi','2.0')" 2>/dev/null; then
   fi
 fi
 
+if ! ldconfig -p | grep -q 'libwebkit2gtk-4.1.so.0'; then
+  echo "ERROR: libwebkit2gtk-4.1-0 is required on Ubuntu 22.04." >&2
+  echo "Run: sudo apt install -y libwebkit2gtk-4.1-0 libjavascriptcoregtk-4.1-0" >&2
+  exit 1
+fi
+
 mkdir -p ~/tandem-test ~/Downloads
 echo "Remote test deps OK on $(hostname)"

@@ -1,6 +1,6 @@
 [package]
 name = "tandem-client"
-version = "1.1.5"
+version = "1.1.6"
 description = "Tandem desktop publisher client"
 authors = ["tafu.casa"]
 edition = "2021"
