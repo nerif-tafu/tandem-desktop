@@ -24,17 +24,20 @@ impl std::fmt::Display for PresentationError {
 impl std::error::Error for PresentationError {}
 
 pub struct KeyboardPresentationController {
-    enigo: Mutex<Enigo>,
     target_window_id: Mutex<Option<u32>>,
+    /// Enigo holds non-Send CoreGraphics state on macOS; keep it Windows-only in managed state.
+    #[cfg(windows)]
+    enigo: Mutex<Enigo>,
 }
 
 impl KeyboardPresentationController {
     pub fn new() -> Self {
-        let settings = Settings::default();
-        let enigo = Enigo::new(&settings).expect("keyboard controller should initialize");
         Self {
-            enigo: Mutex::new(enigo),
             target_window_id: Mutex::new(None),
+            #[cfg(windows)]
+            enigo: Mutex::new(
+                Enigo::new(&Settings::default()).expect("keyboard controller should initialize"),
+            ),
         }
     }
 
@@ -83,21 +86,46 @@ impl KeyboardPresentationController {
             return windows_key::post_presentation_key(window_id, key);
         }
 
-        let mut enigo = self
-            .enigo
-            .lock()
-            .map_err(|_| PresentationError::Input("Keyboard controller is unavailable".into()))?;
+        #[cfg(windows)]
+        {
+            let mut enigo = self
+                .enigo
+                .lock()
+                .map_err(|_| PresentationError::Input("Keyboard controller is unavailable".into()))?;
+            send_enigo_key(&mut enigo, key)?;
+        }
 
-        enigo
-            .key(key, Direction::Press)
-            .map_err(|error| PresentationError::Input(error.to_string()))?;
-        enigo
-            .key(key, Direction::Release)
-            .map_err(|error| PresentationError::Input(error.to_string()))?;
+        #[cfg(not(windows))]
+        send_global_key(key)?;
 
-        tracing::info!(?key, "sent presentation key");
         Ok(())
     }
+}
+
+#[cfg(windows)]
+fn send_enigo_key(enigo: &mut Enigo, key: Key) -> Result<(), PresentationError> {
+    enigo
+        .key(key, Direction::Press)
+        .map_err(|error| PresentationError::Input(error.to_string()))?;
+    enigo
+        .key(key, Direction::Release)
+        .map_err(|error| PresentationError::Input(error.to_string()))?;
+    tracing::info!(?key, "sent presentation key");
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn send_global_key(key: Key) -> Result<(), PresentationError> {
+    let mut enigo = Enigo::new(&Settings::default())
+        .map_err(|error| PresentationError::Input(error.to_string()))?;
+    enigo
+        .key(key, Direction::Press)
+        .map_err(|error| PresentationError::Input(error.to_string()))?;
+    enigo
+        .key(key, Direction::Release)
+        .map_err(|error| PresentationError::Input(error.to_string()))?;
+    tracing::info!(?key, "sent presentation key");
+    Ok(())
 }
 
 fn parse_window_id(source_id: &str) -> Result<u32, PresentationError> {
