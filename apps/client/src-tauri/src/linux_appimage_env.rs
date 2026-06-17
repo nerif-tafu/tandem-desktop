@@ -1,12 +1,12 @@
-/// AppImage GTK/WebKit defaults that avoid EGL crashes on VMs and mismatched GIO modules.
+/// AppImage GTK/WebKit defaults for Linux graphics compatibility.
+/// See https://v2.tauri.app/develop/debug/linux-graphics/
 pub fn prepare() {
     if !running_inside_appimage() {
         return;
     }
 
-    set_if_unset("GSK_RENDERER", "cairo");
     set_if_unset("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-    set_if_unset("LIBGL_ALWAYS_SOFTWARE", "1");
+    set_if_unset("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
 
     if let Some(gio_modules) = bundled_gio_module_dir() {
         std::env::set_var("GIO_MODULE_DIR", gio_modules);
