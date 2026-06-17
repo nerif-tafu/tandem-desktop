@@ -28,9 +28,14 @@ fn stage_ndi_runtime(app: &tauri::App) -> Result<(), String> {
     }
 
     if let Ok(resource_dir) = app.path().resource_dir() {
-        let bundled = resource_dir.join("ndi").join(dll_name);
-        if bundled.exists() {
-            let _ = fs::copy(&bundled, &staged);
+        for bundled in [
+            resource_dir.join(dll_name),
+            resource_dir.join("ndi").join(dll_name),
+        ] {
+            if bundled.exists() {
+                let _ = fs::copy(&bundled, &staged);
+                break;
+            }
         }
     }
 

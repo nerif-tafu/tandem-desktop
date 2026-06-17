@@ -1,6 +1,6 @@
 # Tandem Desktop
 
-Tauri desktop publisher for [Tandem](https://github.com/nerif-tafu/tandem-server). Capture screen, webcam, or NDI sources and stream to remote viewers.
+Desktop publisher for [Tandem](https://github.com/nerif-tafu/tandem-server). Capture your screen, webcam, or NDI feeds and stream them to remote viewers in a room.
 
 ## Development
 
@@ -9,9 +9,9 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` builds `@tandem/shared` and forces `NDI_SDK_DIR` to `apps/client/ndi-sdk`. If you previously set a system-wide `NDI_SDK_DIR` pointing at the old monorepo, remove it or run via `pnpm dev` so the correct SDK path is used.
+`pnpm dev` builds `@tandem/shared` and sets `NDI_SDK_DIR` to `apps/client/ndi-sdk`. If you have an old system-wide `NDI_SDK_DIR` from a previous install, delete it or always start via `pnpm dev` so the path stays correct.
 
-The app expects a running Tandem server (default `http://127.0.0.1:3841`). See [tandem-server](https://github.com/nerif-tafu/tandem-server) for local setup.
+You need a running Tandem server. In dev the app talks to `http://127.0.0.1:3841` by default. See [tandem-server](https://github.com/nerif-tafu/tandem-server) for how to run that locally.
 
 ## Build
 
@@ -20,25 +20,25 @@ pnpm --filter @tandem/shared build
 pnpm --filter @tandem/client build
 ```
 
-Platform bundles are produced under `apps/client/src-tauri/target/release/bundle/`.
+Installers land in `apps/client/src-tauri/target/release/bundle/`.
 
 ## Releases
 
-Push a version tag to publish installers to GitHub Releases:
+Tag a version and push to publish installers on GitHub Releases:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
-The `Release` workflow uploads:
+The Release workflow uploads:
 
 | Platform | Asset |
 |----------|-------|
-| Windows | `Tandem-windows-x64.exe` |
+| Windows | `Tandem-windows-x64-setup.exe` (NSIS installer, includes NDI runtime) |
 | macOS | `Tandem-macos.dmg` |
 | Linux | `Tandem-linux-x86_64.AppImage` |
 
 ## Related repo
 
-- [tandem-server](https://github.com/nerif-tafu/tandem-server) — Web viewer, API, and deployment
+- [tandem-server](https://github.com/nerif-tafu/tandem-server): web viewer, API, and deployment

@@ -26,9 +26,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "appimage"],
+    "targets": ["nsis", "dmg", "appimage"],
     "resources": {
-      "../ndi-sdk/Bin/x64/Processing.NDI.Lib.x64.dll": "ndi/Processing.NDI.Lib.x64.dll"
+      "../ndi-sdk/Bin/x64/Processing.NDI.Lib.x64.dll": "Processing.NDI.Lib.x64.dll"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
     },
     "icon": [
       "icons/32x32.png",
