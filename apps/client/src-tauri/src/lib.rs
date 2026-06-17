@@ -1,5 +1,7 @@
 mod capture;
 mod logging;
+#[cfg(target_os = "linux")]
+mod linux_appimage_env;
 mod ndi_config;
 mod presentation;
 mod window_icon;
@@ -67,6 +69,9 @@ fn stage_ndi_runtime_file(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    linux_appimage_env::prepare();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             is_dev_mode,
