@@ -99,6 +99,8 @@ export function App() {
         clientType: 'desktop',
         password,
       }),
+    }).catch(() => {
+      throw new Error(`Could not reach server at ${baseUrl}. Check Settings for the server host.`);
     });
 
     const joinPayload = await joinResponse.json();
@@ -131,6 +133,8 @@ export function App() {
           code: options.code,
           password: options.password,
         }),
+      }).catch(() => {
+        throw new Error(`Could not reach server at ${baseUrl}. Check Settings for the server host.`);
       });
 
       let createPayload: { room?: { code?: string }; error?: { message?: string } };
