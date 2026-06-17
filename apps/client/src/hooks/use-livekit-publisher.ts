@@ -41,8 +41,17 @@ export function useLiveKitPublisher(
     roomRef.current = room;
     setConnectionState('connecting');
 
+    const connectTimeout = window.setTimeout(() => {
+      if (!cancelled && room.state !== ConnectionState.Connected) {
+        console.error('LiveKit publisher connect timed out');
+        setConnectionState('failed');
+        void room.disconnect();
+      }
+    }, 20_000);
+
     const handleConnectionStateChanged = (state: ConnectionState) => {
       if (state === ConnectionState.Connected) {
+        window.clearTimeout(connectTimeout);
         setConnectionState('connected');
       }
     };
@@ -71,6 +80,7 @@ export function useLiveKitPublisher(
 
     return () => {
       cancelled = true;
+      window.clearTimeout(connectTimeout);
       room.off(RoomEvent.ConnectionStateChanged, handleConnectionStateChanged);
 
       for (const [slot, publisher] of publishersRef.current.entries()) {

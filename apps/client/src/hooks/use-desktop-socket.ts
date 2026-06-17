@@ -106,6 +106,7 @@ export function useDesktopSocket(
 
       activeSocket.on('connect', () => {
         setConnected(true);
+        setError(null);
 
         activeSocket?.emit(SOCKET_EVENTS.ROOM_JOIN, {
           roomCode,
@@ -123,6 +124,12 @@ export function useDesktopSocket(
       activeSocket.on('disconnect', () => {
         setConnected(false);
         setRoomStateReady(false);
+      });
+
+      activeSocket.on('connect_error', (connectError) => {
+        setConnected(false);
+        setRoomStateReady(false);
+        setError(connectError.message || 'Could not connect to server');
       });
 
       activeSocket.on(SOCKET_EVENTS.ACTIVE_PUBLISHER_STATE, (payload: ActivePublisherState) => {

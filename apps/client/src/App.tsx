@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { invoke } from '@tauri-apps/api/core';
 
@@ -238,6 +238,18 @@ export function App() {
     : joinLoading
       ? 'Joining room…'
       : 'Connecting to room…';
+
+  useEffect(() => {
+    if (!sessionBootstrapping) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setSessionBootstrapping(false);
+    }, 30_000);
+
+    return () => window.clearTimeout(timeout);
+  }, [sessionBootstrapping]);
 
   return (
     <div className="relative h-screen overflow-hidden bg-background">

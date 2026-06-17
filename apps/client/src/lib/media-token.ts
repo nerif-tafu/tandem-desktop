@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { MediaTokenResponseSchema, resolveLiveKitUrlForClient, type ParticipantRole } from '@tandem/shared';
 
 import { getServerUrl } from './server-url';
@@ -19,8 +20,12 @@ export async function fetchMediaToken(
   }
 
   const parsed = MediaTokenResponseSchema.parse(await response.json());
+  const isDev = await invoke<boolean>('is_dev_mode');
+
   return {
     ...parsed,
-    url: resolveLiveKitUrlForClient(parsed.url, 'localhost'),
+    url: isDev
+      ? resolveLiveKitUrlForClient(parsed.url, 'localhost')
+      : resolveLiveKitUrlForClient(parsed.url),
   };
 }
