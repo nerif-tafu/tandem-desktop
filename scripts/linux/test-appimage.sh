@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run on the Linux test machine from repo: bash scripts/linux/test-appimage.sh [AppImage path]
+# Run on the Linux hardware test machine (default 192.168.3.210).
+# From Windows: pwsh scripts/linux/run-remote-verify.ps1
 set -euo pipefail
 
 APPIMAGE="${1:-$HOME/tandem-test/Tandem-linux-x86_64.AppImage}"
