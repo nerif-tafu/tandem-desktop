@@ -223,6 +223,12 @@ jobs:
 
 
 
+      - name: Prepare Linux AppImage hook
+
+        run: bash scripts/linux/prepare-linux-bundle.sh
+
+
+
       - name: Build Linux AppImage
 
         run: pnpm --filter @tandem/client exec tauri build -- --no-default-features

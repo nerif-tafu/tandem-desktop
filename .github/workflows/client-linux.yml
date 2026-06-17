@@ -40,6 +40,9 @@ jobs:
       - name: Build shared package
         run: pnpm --filter @tandem/shared build
 
+      - name: Prepare Linux AppImage hook
+        run: bash scripts/linux/prepare-linux-bundle.sh
+
       - name: Build AppImage
         run: pnpm --filter @tandem/client exec tauri build -- --no-default-features
 

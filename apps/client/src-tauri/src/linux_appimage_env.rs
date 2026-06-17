@@ -1,4 +1,6 @@
-/// AppImage GTK/WebKit defaults for Linux graphics compatibility.
+/// Linux AppImage defaults for GTK/WebKit graphics compatibility.
+/// LD_PRELOAD for host libwayland-client is applied in `scripts/linux/patch-appimage.sh`
+/// at build time (must run before the binary loads bundled libs).
 /// See https://v2.tauri.app/develop/debug/linux-graphics/
 pub fn prepare() {
     if !running_inside_appimage() {

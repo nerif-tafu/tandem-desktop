@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Optional debug launcher. The AppImage should work directly after v1.1.2.
+# Optional debug launcher. The AppImage should work directly after v1.1.3.
 set -euo pipefail
 
 APPIMAGE="${1:-${TANDEM_APPIMAGE:-$HOME/tandem-test/Tandem-linux-x86_64.AppImage}}"
