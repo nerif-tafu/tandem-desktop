@@ -65,9 +65,7 @@ jobs:
         run: pnpm --filter @tandem/shared build
 
       - name: Build macOS dmg
-        env:
-          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
-        run: pnpm --filter @tandem/client build
+        run: pnpm --filter @tandem/client exec tauri build -- --no-default-features
 
       - name: Stage release asset
         run: |
@@ -96,7 +94,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libpipewire-0.3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libpipewire-0.3-dev libgbm-dev
 
       - name: Install dependencies
         run: pnpm install
@@ -105,8 +103,6 @@ jobs:
         run: pnpm --filter @tandem/shared build
 
       - name: Build Linux AppImage
-        env:
-          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
         run: pnpm --filter @tandem/client exec tauri build -- --no-default-features
 
       - name: Stage release asset
