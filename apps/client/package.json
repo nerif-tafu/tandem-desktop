@@ -1,12 +1,12 @@
 {
   "name": "@tandem/client",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node ../../scripts/with-ndi-env.mjs tauri dev",
     "dev:vite": "vite",
-    "build": "node ../../scripts/with-ndi-env.mjs tauri build",
+    "build": "node ../../scripts/with-ndi-env.mjs tauri build && node ../../scripts/macos/post-bundle-ndi.mjs",
     "build:vite": "tsc -p tsconfig.json && vite build",
     "tauri": "tauri",
     "typecheck": "tsc -p tsconfig.json --noEmit",

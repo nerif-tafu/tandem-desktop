@@ -15,26 +15,49 @@ use tauri::Manager;
 
 #[cfg(all(windows, feature = "ndi"))]
 fn stage_ndi_runtime(app: &tauri::App) -> Result<(), String> {
+    stage_ndi_runtime_file(
+        app,
+        &["Processing.NDI.Lib.x64.dll"],
+        &["Processing.NDI.Lib.x64.dll"],
+    )
+}
+
+#[cfg(all(target_os = "macos", feature = "ndi"))]
+fn stage_ndi_runtime(app: &tauri::App) -> Result<(), String> {
+    stage_ndi_runtime_file(
+        app,
+        &["libndi.dylib", "libndi.4.dylib"],
+        &["libndi.dylib", "libndi.4.dylib"],
+    )
+}
+
+#[cfg(feature = "ndi")]
+fn stage_ndi_runtime_file(
+    app: &tauri::App,
+    file_names: &[&str],
+    resource_names: &[&str],
+) -> Result<(), String> {
     use std::fs;
 
-    let dll_name = "Processing.NDI.Lib.x64.dll";
     let Ok(exe_dir) = app.path().executable_dir() else {
         return Ok(());
     };
-    let staged = exe_dir.join(dll_name);
 
-    if staged.exists() {
+    if file_names.iter().any(|name| exe_dir.join(name).exists()) {
         return Ok(());
     }
 
     if let Ok(resource_dir) = app.path().resource_dir() {
-        for bundled in [
-            resource_dir.join(dll_name),
-            resource_dir.join("ndi").join(dll_name),
-        ] {
-            if bundled.exists() {
-                let _ = fs::copy(&bundled, &staged);
-                break;
+        for resource_name in resource_names {
+            for bundled in [
+                resource_dir.join(resource_name),
+                resource_dir.join("ndi").join(resource_name),
+            ] {
+                if bundled.exists() {
+                    let dest = exe_dir.join(resource_name);
+                    let _ = fs::copy(&bundled, &dest);
+                    return Ok(());
+                }
             }
         }
     }
@@ -83,7 +106,7 @@ pub fn run() {
                 ndi_config::apply_from_app_config(&config_dir)?;
             }
 
-            #[cfg(all(windows, feature = "ndi"))]
+            #[cfg(feature = "ndi")]
             stage_ndi_runtime(app)?;
 
             app.manage(KeyboardPresentationController::new());

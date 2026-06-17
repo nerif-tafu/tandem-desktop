@@ -1,57 +1,113 @@
-name: Client Windows
-
-on:
-  push:
-    branches: [main]
-    tags: ['v*']
-    paths:
-      - 'apps/client/**'
-      - 'packages/shared/**'
-      - '.github/workflows/client-windows.yml'
-  pull_request:
-    paths:
-      - 'apps/client/**'
-      - 'packages/shared/**'
-      - '.github/workflows/client-windows.yml'
-
-jobs:
-  build:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build shared package
-        run: pnpm --filter @tandem/shared build
-
-      - name: Build Windows installer
-        env:
-          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
-        run: pnpm --filter @tandem/client build
-
-      - name: Stage Windows installer artifact
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem apps/client/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-          if (-not $installer) {
-            throw "NSIS installer not found in bundle/nsis"
-          }
-          Copy-Item $installer.FullName tandem-windows-x64-setup.exe
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tandem-windows-x64-setup
-          path: tandem-windows-x64-setup.exe
-
+name: Client Windows
+
+
+
+on:
+
+  push:
+
+    branches: [main]
+
+    tags: ['v*']
+
+    paths:
+
+      - 'apps/client/**'
+
+      - 'packages/shared/**'
+
+      - '.github/workflows/client-windows.yml'
+
+  pull_request:
+
+    paths:
+
+      - 'apps/client/**'
+
+      - 'packages/shared/**'
+
+      - '.github/workflows/client-windows.yml'
+
+
+
+jobs:
+
+  build:
+
+    runs-on: windows-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+
+
+      - uses: pnpm/action-setup@v4
+
+
+
+      - uses: actions/setup-node@v4
+
+        with:
+
+          node-version: 22
+
+          cache: pnpm
+
+
+
+      - uses: dtolnay/rust-toolchain@stable
+
+
+
+      - name: Install dependencies
+
+        run: pnpm install
+
+
+
+      - name: Build shared package
+
+        run: pnpm --filter @tandem/shared build
+
+
+
+      - name: Build Windows installer
+
+        env:
+
+          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
+
+        run: pnpm --filter @tandem/client build
+
+
+
+      - name: Stage Windows installer artifact
+
+        shell: pwsh
+
+        run: |
+
+          $installer = Get-ChildItem apps/client/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+
+          if (-not $installer) {
+
+            throw "NSIS installer not found in bundle/nsis"
+
+          }
+
+          Copy-Item $installer.FullName tandem-windows-x64-setup.exe
+
+
+
+      - name: Upload artifact
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: tandem-windows-x64-setup
+
+          path: tandem-windows-x64-setup.exe
+
+

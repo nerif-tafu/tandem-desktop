@@ -1,137 +1,282 @@
-name: Release
-
-on:
-  push:
-    tags: ['v*']
-
-permissions:
-  contents: write
-
-jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build shared package
-        run: pnpm --filter @tandem/shared build
-
-      - name: Build Windows installer
-        env:
-          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
-        run: pnpm --filter @tandem/client build
-
-      - name: Stage release asset
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
-          $installer = Get-ChildItem apps/client/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
-          if (-not $installer) {
-            throw "NSIS installer not found in bundle/nsis"
-          }
-          Copy-Item $installer.FullName release-assets/Tandem-windows-x64-setup.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows
-          path: release-assets/Tandem-windows-x64-setup.exe
-
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build shared package
-        run: pnpm --filter @tandem/shared build
-
-      - name: Build macOS dmg
-        run: pnpm --filter @tandem/client exec tauri build -- --no-default-features
-
-      - name: Stage release asset
-        run: |
-          mkdir -p release-assets
-          cp apps/client/src-tauri/target/release/bundle/dmg/*.dmg release-assets/Tandem-macos.dmg
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos
-          path: release-assets/Tandem-macos.dmg
-
-  build-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libpipewire-0.3-dev libgbm-dev
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build shared package
-        run: pnpm --filter @tandem/shared build
-
-      - name: Build Linux AppImage
-        run: pnpm --filter @tandem/client exec tauri build -- --no-default-features
-
-      - name: Stage release asset
-        run: |
-          mkdir -p release-assets
-          cp apps/client/src-tauri/target/release/bundle/appimage/*.AppImage release-assets/Tandem-linux-x86_64.AppImage
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux
-          path: release-assets/Tandem-linux-x86_64.AppImage
-
-  publish:
-    needs: [build-windows, build-macos, build-linux]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-
-      - uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            release-assets/windows/Tandem-windows-x64-setup.exe
-            release-assets/macos/Tandem-macos.dmg
-            release-assets/linux/Tandem-linux-x86_64.AppImage
-
+name: Release
+
+
+
+on:
+
+  push:
+
+    tags: ['v*']
+
+
+
+permissions:
+
+  contents: write
+
+
+
+jobs:
+
+  build-windows:
+
+    runs-on: windows-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+
+
+      - uses: pnpm/action-setup@v4
+
+
+
+      - uses: actions/setup-node@v4
+
+        with:
+
+          node-version: 22
+
+          cache: pnpm
+
+
+
+      - uses: dtolnay/rust-toolchain@stable
+
+
+
+      - name: Install dependencies
+
+        run: pnpm install
+
+
+
+      - name: Build shared package
+
+        run: pnpm --filter @tandem/shared build
+
+
+
+      - name: Build Windows installer
+
+        env:
+
+          NDI_SDK_DIR: ${{ github.workspace }}/apps/client/ndi-sdk
+
+        run: pnpm --filter @tandem/client build
+
+
+
+      - name: Stage release asset
+
+        shell: pwsh
+
+        run: |
+
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+
+          $installer = Get-ChildItem apps/client/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+
+          if (-not $installer) {
+
+            throw "NSIS installer not found in bundle/nsis"
+
+          }
+
+          Copy-Item $installer.FullName release-assets/Tandem-windows-x64-setup.exe
+
+
+
+      - uses: actions/upload-artifact@v4
+
+        with:
+
+          name: windows
+
+          path: release-assets/Tandem-windows-x64-setup.exe
+
+
+
+  build-macos:
+
+    runs-on: macos-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+
+
+      - uses: pnpm/action-setup@v4
+
+
+
+      - uses: actions/setup-node@v4
+
+        with:
+
+          node-version: 22
+
+          cache: pnpm
+
+
+
+      - uses: dtolnay/rust-toolchain@stable
+
+
+
+      - name: Install NDI SDK
+        uses: GrantSparks/grafton-ndi/.github/actions/setup-ndi-macos@v0.13.0
+
+
+
+      - name: Install dependencies
+
+        run: pnpm install
+
+
+
+      - name: Build shared package
+
+        run: pnpm --filter @tandem/shared build
+
+
+
+      - name: Build macOS dmg
+
+        env:
+
+          NDI_SDK_DIR: /Library/NDI SDK for Apple
+
+        run: pnpm --filter @tandem/client build
+
+
+
+      - name: Stage release asset
+
+        run: |
+
+          mkdir -p release-assets
+
+          cp apps/client/src-tauri/target/release/bundle/dmg/*.dmg release-assets/Tandem-macos.dmg
+
+
+
+      - uses: actions/upload-artifact@v4
+
+        with:
+
+          name: macos
+
+          path: release-assets/Tandem-macos.dmg
+
+
+
+  build-linux:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/checkout@v4
+
+
+
+      - uses: pnpm/action-setup@v4
+
+
+
+      - uses: actions/setup-node@v4
+
+        with:
+
+          node-version: 22
+
+          cache: pnpm
+
+
+
+      - uses: dtolnay/rust-toolchain@stable
+
+
+
+      - name: Install Linux dependencies
+
+        run: |
+
+          sudo apt-get update
+
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libpipewire-0.3-dev libgbm-dev
+
+
+
+      - name: Install dependencies
+
+        run: pnpm install
+
+
+
+      - name: Build shared package
+
+        run: pnpm --filter @tandem/shared build
+
+
+
+      - name: Build Linux AppImage
+
+        run: pnpm --filter @tandem/client exec tauri build -- --no-default-features
+
+
+
+      - name: Stage release asset
+
+        run: |
+
+          mkdir -p release-assets
+
+          cp apps/client/src-tauri/target/release/bundle/appimage/*.AppImage release-assets/Tandem-linux-x86_64.AppImage
+
+
+
+      - uses: actions/upload-artifact@v4
+
+        with:
+
+          name: linux
+
+          path: release-assets/Tandem-linux-x86_64.AppImage
+
+
+
+  publish:
+
+    needs: [build-windows, build-macos, build-linux]
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - uses: actions/download-artifact@v4
+
+        with:
+
+          path: release-assets
+
+
+
+      - uses: softprops/action-gh-release@v2
+
+        with:
+
+          generate_release_notes: true
+
+          files: |
+
+            release-assets/windows/Tandem-windows-x64-setup.exe
+
+            release-assets/macos/Tandem-macos.dmg
+
+            release-assets/linux/Tandem-linux-x86_64.AppImage
+
+

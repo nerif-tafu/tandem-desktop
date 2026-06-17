@@ -37,6 +37,8 @@ pub fn list_all_sources() -> Result<Vec<CaptureSource>, CaptureError> {
 }
 
 pub fn list_presentation_windows() -> Result<Vec<super::types::PresentationWindow>, CaptureError> {
+    super::macos_screen_permission::ensure_access();
+
     let mut windows = Vec::new();
 
     for window in xcap::Window::all().map_err(|error| CaptureError::ListFailed(error.to_string()))? {
@@ -54,6 +56,13 @@ pub fn list_presentation_windows() -> Result<Vec<super::types::PresentationWindo
             .app_name()
             .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
 
+        #[cfg(target_os = "macos")]
+        {
+            if is_macos_screen_capture_placeholder(&title, &app_name) {
+                continue;
+            }
+        }
+
         windows.push(super::types::PresentationWindow {
             id: format!("window:{id}"),
             label: format!("{title} — {app_name}"),
@@ -61,6 +70,26 @@ pub fn list_presentation_windows() -> Result<Vec<super::types::PresentationWindo
     }
 
     Ok(windows)
+}
+
+#[cfg(target_os = "macos")]
+fn is_macos_screen_capture_placeholder(title: &str, app_name: &str) -> bool {
+    let title = title.trim();
+    let app_name = app_name.trim();
+
+    if app_name.eq_ignore_ascii_case("Window Server") {
+        return true;
+    }
+
+    if title.eq_ignore_ascii_case("Menubar") || title.eq_ignore_ascii_case("Menu Bar") {
+        return true;
+    }
+
+    if title.eq_ignore_ascii_case("Desktop") && app_name.eq_ignore_ascii_case("Window Server") {
+        return true;
+    }
+
+    false
 }
 
 pub fn find_source(source_id: &str) -> Result<CaptureSource, CaptureError> {
@@ -81,6 +110,8 @@ pub fn capture_preview(source_id: &str) -> Result<String, CaptureError> {
 }
 
 fn list_screens() -> Result<Vec<CaptureSource>, CaptureError> {
+    super::macos_screen_permission::ensure_access();
+
     #[cfg(windows)]
     {
         use windows_capture::monitor::Monitor;
@@ -153,6 +184,8 @@ fn list_webcams() -> Result<Vec<CaptureSource>, CaptureError> {
 }
 
 fn capture_monitor_preview(source_id: &str) -> Result<String, CaptureError> {
+    super::macos_screen_permission::ensure_access();
+
     #[cfg(windows)]
     {
         let index = parse_id_suffix(source_id, "screen:")? as usize;

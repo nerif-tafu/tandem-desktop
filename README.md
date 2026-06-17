@@ -36,7 +36,7 @@ The Release workflow uploads:
 | Platform | Asset |
 |----------|-------|
 | Windows | `Tandem-windows-x64-setup.exe` (NSIS installer, includes NDI runtime) |
-| macOS | `Tandem-macos.dmg` |
+| macOS | `Tandem-macos.dmg` (includes NDI when built with the NDI SDK for Apple) |
 | Linux | `Tandem-linux-x86_64.AppImage` |
 
 ## Related repo

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Tandem needs camera access to share your webcam in presentations.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Tandem does not record microphone audio for webcam capture.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Tandem needs screen recording access to capture your display and list presentation windows for the remote clicker.</string>
+</dict>
+</plist>

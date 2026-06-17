@@ -1,5 +1,3 @@
-import { useEffect, useState } from 'react';
-
 interface FrameStreamSession {
   stream: MediaStream;
   cleanup: () => void;
@@ -51,11 +49,107 @@ export function createMediaStreamFromFrameSocket(
   ).MediaStreamTrackGenerator;
 
   if (!Generator || typeof VideoFrame === 'undefined') {
-    return Promise.reject(
-      new Error('This runtime does not support MediaStreamTrackGenerator / VideoFrame'),
-    );
+    return createMediaStreamFromCanvasSocket(wsUrl, counters);
   }
 
+  return createMediaStreamFromGeneratorSocket(wsUrl, counters, Generator);
+}
+
+function createMediaStreamFromCanvasSocket(
+  wsUrl: string,
+  counters?: FrameStreamCounters,
+): Promise<FrameStreamSession> {
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      reject(new Error('Canvas 2D is not available in this runtime'));
+      return;
+    }
+
+    const stream = canvas.captureStream(30);
+    const ws = new WebSocket(wsUrl);
+    ws.binaryType = 'arraybuffer';
+
+    let active = true;
+    let settled = false;
+
+    const cleanup = () => {
+      active = false;
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+      }
+      stream.getTracks().forEach((track) => track.stop());
+    };
+
+    const fail = (error: Error) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const timeout = window.setTimeout(() => {
+      fail(new Error('Timed out waiting for the first capture frame'));
+    }, 8_000);
+
+    ws.onerror = () => {
+      fail(new Error('Lost connection to the native capture stream'));
+    };
+
+    ws.onmessage = (event) => {
+      if (!active) {
+        return;
+      }
+
+      counters && (counters.received += 1);
+
+      const buffer = event.data;
+      if (!(buffer instanceof ArrayBuffer) || buffer.byteLength < 8) {
+        return;
+      }
+
+      const view = new DataView(buffer);
+      const width = view.getUint32(0, true);
+      const height = view.getUint32(4, true);
+      const expectedLength = width * height * 4;
+
+      if (width === 0 || height === 0 || buffer.byteLength - 8 !== expectedLength) {
+        return;
+      }
+
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+
+      const imageData = context.createImageData(width, height);
+      imageData.data.set(new Uint8ClampedArray(buffer, 8, expectedLength));
+      context.putImageData(imageData, 0, 0);
+
+      counters && (counters.accepted += 1);
+
+      if (!settled) {
+        settled = true;
+        window.clearTimeout(timeout);
+        resolve({ stream, cleanup });
+      }
+    };
+  });
+}
+
+function createMediaStreamFromGeneratorSocket(
+  wsUrl: string,
+  counters: FrameStreamCounters | undefined,
+  Generator: new (init: { kind: 'video' }) => MediaStreamTrack & {
+    readable: ReadableStream<VideoFrame>;
+    writable: WritableStream<VideoFrame>;
+  },
+): Promise<FrameStreamSession> {
   return new Promise((resolve, reject) => {
     const generator = new Generator({ kind: 'video' });
     const writer = generator.writable.getWriter();

@@ -192,6 +192,7 @@ impl PreviewStream {
     pub(crate) fn open(source: &CaptureSource) -> Result<Self, CaptureError> {
         match source.kind {
             CaptureSourceKind::Screen => {
+                super::macos_screen_permission::ensure_access();
                 let monitor_id = sources::parse_id_suffix(&source.id, "screen:")?;
                 let monitor = find_monitor(monitor_id)?;
                 Ok(Self::Screen(monitor))

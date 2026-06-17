@@ -8,8 +8,9 @@ build
 .DS_Store
 Thumbs.db
 apps/client/src-tauri/target
+apps/client/src-tauri/ndi-runtime
 apps/client/src-tauri/gen
 apps/web/dist
 apps/server/dist
 coverage
-*.tsbuildinfo
+error.txt

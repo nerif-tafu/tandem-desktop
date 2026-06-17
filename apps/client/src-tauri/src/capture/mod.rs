@@ -1,4 +1,5 @@
 mod frame_server;
+mod macos_screen_permission;
 mod ndi;
 mod preview;
 mod sources;
@@ -37,6 +38,10 @@ pub fn spawn_diagnostics_task(app: tauri::AppHandle) {
     });
 }
 
+pub use macos_screen_permission::{
+    ensure_access as ensure_screen_capture_access, has_access as has_screen_capture_access,
+    request_access as request_screen_capture_access,
+};
 pub use ndi::is_available as ndi_is_available;
 pub use sources::{capture_preview, find_source, list_all_sources, list_presentation_windows};
 pub use types::{

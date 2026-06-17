@@ -11,12 +11,16 @@ export async function stopSlotCapture(slot: StreamSlot): Promise<void> {
   await invoke('stop_slot_video', { slot });
 }
 
+function canUseBrowserWebcam(): boolean {
+  return typeof navigator.mediaDevices?.getUserMedia === 'function';
+}
+
 export async function startSlotCapture(
   slot: StreamSlot,
   source: CaptureSource,
   counters?: FrameStreamCounters,
 ): Promise<{ stream: MediaStream; cleanup: () => Promise<void> }> {
-  if (source.kind === 'webcam') {
+  if (source.kind === 'webcam' && canUseBrowserWebcam()) {
     const { stream, cleanup } = await createWebcamStream(source.id);
     return {
       stream,

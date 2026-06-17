@@ -1,9 +1,10 @@
 [package]
 name = "tandem-client"
-version = "0.1.0"
+version = "1.1.0"
 description = "Tandem desktop publisher client"
 authors = ["tafu.casa"]
 edition = "2021"
+default-run = "tandem-client"
 
 [lib]
 name = "tandem_client_lib"
@@ -43,6 +44,11 @@ windows-capture = "2.0"
 [features]
 default = ["ndi"]
 ndi = ["dep:grafton-ndi"]
+
+[[example]]
+name = "ndi-probe"
+path = "examples/ndi-probe.rs"
+required-features = ["ndi"]
 
 [profile.release]
 panic = "abort"

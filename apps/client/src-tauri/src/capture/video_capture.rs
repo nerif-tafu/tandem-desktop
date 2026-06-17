@@ -89,6 +89,7 @@ impl VideoCaptureManager {
                 spawn_threaded_capture(&source, frame_slot, stop.clone(), slot_name)
             }
             CaptureSourceKind::Ndi | CaptureSourceKind::Webcam => {
+                #[cfg(windows)]
                 if matches!(source.kind, CaptureSourceKind::Webcam) {
                     return Err(format!("Slot \"{slot}\" uses browser webcam capture"));
                 }
@@ -148,7 +149,7 @@ fn spawn_threaded_capture(
         let result = match source.kind {
             CaptureSourceKind::Screen => capture_source_xcap_loop(&source, frame_slot, stop_flag),
             CaptureSourceKind::Ndi => capture_source_ndi_loop(&source, frame_slot, stop_flag),
-            CaptureSourceKind::Webcam => Ok(()),
+            CaptureSourceKind::Webcam => capture_source_webcam_loop(&source, frame_slot, stop_flag),
         };
 
         if let Err(error) = result {
@@ -200,6 +201,30 @@ fn capture_source_xcap_loop(
         match stream.capture_rgba() {
             Ok(rgba) => publish_rgba_image(&frame_slot, rgba),
             Err(error) => tracing::debug!(%error, "xcap capture failed"),
+        }
+
+        let elapsed = frame_start.elapsed();
+        if elapsed < Duration::from_micros(16_666) {
+            thread::sleep(Duration::from_micros(16_666) - elapsed);
+        }
+    }
+
+    Ok(())
+}
+
+fn capture_source_webcam_loop(
+    source: &CaptureSource,
+    frame_slot: Arc<FrameSlot>,
+    stop: Arc<AtomicBool>,
+) -> Result<(), CaptureError> {
+    let mut stream = super::preview::PreviewStream::open(source)?;
+
+    while !stop.load(Ordering::Relaxed) {
+        let frame_start = std::time::Instant::now();
+
+        match stream.capture_rgba() {
+            Ok(rgba) => publish_rgba_image(&frame_slot, rgba),
+            Err(error) => tracing::debug!(%error, "webcam capture failed"),
         }
 
         let elapsed = frame_start.elapsed();
