@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "ndi-runtime/libndi.so.6": "ndi/libndi.so.6"
+    }
+  }
+}

@@ -15,12 +15,17 @@ function canUseBrowserWebcam(): boolean {
   return typeof navigator.mediaDevices?.getUserMedia === 'function';
 }
 
+function prefersNativeWebcam(): boolean {
+  // WebKit getUserMedia is unreliable inside the Linux AppImage (portal/GStreamer deps).
+  return /Linux/i.test(navigator.userAgent);
+}
+
 export async function startSlotCapture(
   slot: StreamSlot,
   source: CaptureSource,
   counters?: FrameStreamCounters,
 ): Promise<{ stream: MediaStream; cleanup: () => Promise<void> }> {
-  if (source.kind === 'webcam' && canUseBrowserWebcam()) {
+  if (source.kind === 'webcam' && canUseBrowserWebcam() && !prefersNativeWebcam()) {
     const { stream, cleanup } = await createWebcamStream(source.id);
     return {
       stream,

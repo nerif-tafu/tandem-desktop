@@ -23,9 +23,24 @@ impl std::fmt::Display for CaptureError {
 impl std::error::Error for CaptureError {}
 
 pub fn list_all_sources() -> Result<Vec<CaptureSource>, CaptureError> {
+    #[cfg(target_os = "linux")]
+    super::ensure_linux_display_env();
+
     let mut sources = Vec::new();
-    sources.extend(list_screens()?);
-    sources.extend(list_webcams()?);
+    sources.extend(match list_screens() {
+        Ok(screens) => screens,
+        Err(error) => {
+            tracing::warn!(%error, "screen source discovery failed");
+            Vec::new()
+        }
+    });
+    sources.extend(match list_webcams() {
+        Ok(webcams) => webcams,
+        Err(error) => {
+            tracing::warn!(%error, "webcam source discovery failed");
+            Vec::new()
+        }
+    });
     sources.extend(match list_ndi_sources() {
         Ok(ndi_sources) => ndi_sources,
         Err(error) => {

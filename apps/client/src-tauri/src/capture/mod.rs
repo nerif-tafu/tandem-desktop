@@ -1,4 +1,8 @@
 mod frame_server;
+#[cfg(target_os = "linux")]
+mod linux_display_env;
+#[cfg(target_os = "linux")]
+pub mod linux_screen;
 mod macos_screen_permission;
 mod ndi;
 mod preview;
@@ -21,6 +25,11 @@ pub(crate) fn disable_background_throttling() {
 
 pub use preview::PreviewManager;
 pub use video_capture::{CaptureDiagnostics, VideoCaptureManager};
+
+#[cfg(target_os = "linux")]
+pub fn ensure_linux_display_env() {
+    linux_display_env::ensure();
+}
 
 pub fn spawn_diagnostics_task(app: tauri::AppHandle) {
     std::thread::spawn(move || {

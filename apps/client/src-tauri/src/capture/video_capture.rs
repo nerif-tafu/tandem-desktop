@@ -13,6 +13,8 @@ use serde::Serialize;
 use super::frame_server::{FrameServer, FrameSlot, SlotFrameStats};
 use super::sources::CaptureError;
 use super::types::{CaptureSource, CaptureSourceKind};
+#[cfg(target_os = "linux")]
+use super::linux_screen::{LinuxPortalContext, LinuxScreenCaptureSession};
 #[cfg(windows)]
 use super::windows_video::WindowsCaptureSession;
 
@@ -27,6 +29,8 @@ pub struct CaptureDiagnostics {
 struct SlotCaptureWorker {
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
+    #[cfg(target_os = "linux")]
+    linux_screen_capture: Option<LinuxScreenCaptureSession>,
     #[cfg(windows)]
     windows_capture: Option<WindowsCaptureSession>,
 }
@@ -34,6 +38,11 @@ struct SlotCaptureWorker {
 impl SlotCaptureWorker {
     fn stop(mut self) {
         self.stop.store(true, Ordering::Relaxed);
+
+        #[cfg(target_os = "linux")]
+        if let Some(session) = self.linux_screen_capture.take() {
+            session.stop();
+        }
 
         #[cfg(windows)]
         if let Some(session) = self.windows_capture.take() {
@@ -63,7 +72,12 @@ impl VideoCaptureManager {
         self.server.port()
     }
 
-    pub fn start_slot(&self, slot: &str, source: &CaptureSource) -> Result<String, String> {
+    pub fn start_slot(
+        &self,
+        slot: &str,
+        source: &CaptureSource,
+        #[cfg(target_os = "linux")] portal: LinuxPortalContext,
+    ) -> Result<String, String> {
         self.stop_slot(slot);
 
         let frame_slot = self.server.register_slot(slot);
@@ -81,10 +95,25 @@ impl VideoCaptureManager {
                 SlotCaptureWorker {
                     stop,
                     join: None,
+                    #[cfg(target_os = "linux")]
+                    linux_screen_capture: None,
                     windows_capture: Some(session),
                 }
             }
-            #[cfg(not(windows))]
+            #[cfg(target_os = "linux")]
+            CaptureSourceKind::Screen => {
+                let session = LinuxScreenCaptureSession::start(&source, frame_slot.clone(), portal)
+                    .map_err(|error| error.to_string())?;
+
+                SlotCaptureWorker {
+                    stop,
+                    join: None,
+                    linux_screen_capture: Some(session),
+                    #[cfg(windows)]
+                    windows_capture: None,
+                }
+            }
+            #[cfg(all(not(windows), not(target_os = "linux")))]
             CaptureSourceKind::Screen => {
                 spawn_threaded_capture(&source, frame_slot, stop.clone(), slot_name)
             }
@@ -103,7 +132,12 @@ impl VideoCaptureManager {
             .expect("video workers lock")
             .insert(slot.to_string(), worker);
 
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        #[cfg(target_os = "linux")]
+        let first_frame_timeout = Duration::from_secs(30);
+        #[cfg(not(target_os = "linux"))]
+        let first_frame_timeout = Duration::from_secs(5);
+
+        let deadline = std::time::Instant::now() + first_frame_timeout;
         while std::time::Instant::now() < deadline {
             if first_frame_slot.has_frame() {
                 return Ok(self.server.socket_url(slot));
@@ -160,6 +194,8 @@ fn spawn_threaded_capture(
     SlotCaptureWorker {
         stop,
         join: Some(join),
+        #[cfg(target_os = "linux")]
+        linux_screen_capture: None,
         #[cfg(windows)]
         windows_capture: None,
     }

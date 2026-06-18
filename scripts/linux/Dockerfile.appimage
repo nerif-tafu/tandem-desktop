@@ -1,0 +1,62 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV RUSTUP_HOME=/usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo
+ENV PATH=/usr/local/cargo/bin:/root/.local/share/pnpm:/root/.local/bin:$PATH
+ENV CARGO_PROFILE_RELEASE_LTO=false
+ENV CARGO_PROFILE_RELEASE_CODEGEN_UNITS=4
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl wget git pkg-config build-essential \
+    software-properties-common gnupg \
+    libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev \
+    libpipewire-0.3-dev libgbm-dev libxcb1-dev libxrandr-dev libdbus-1-dev \
+    libwayland-dev libegl-dev libclang-dev \
+    fuse libfuse2 file \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y nodejs \
+  && npm install -g pnpm \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Install NDI SDK
+RUN mkdir -p /opt/ndi-sdk /tmp/ndi-install \
+  && curl -fsSL -o /tmp/ndi-install/ndi_sdk_installer.tar.gz \
+    https://downloads.ndi.tv/SDK/NDI_SDK_Linux/Install_NDI_SDK_v6_Linux.tar.gz \
+  && tar -xzf /tmp/ndi-install/ndi_sdk_installer.tar.gz -C /tmp/ndi-install \
+  && installer="$(find /tmp/ndi-install -name 'Install_NDI_SDK_*.sh' -type f | head -1)" \
+  && archive_line="$(awk '/^__NDI_ARCHIVE_BEGIN__/ { print NR+1; exit 0; }' "$installer")" \
+  && mkdir -p /tmp/ndi-install/extracted \
+  && tail -n+"$archive_line" "$installer" | tar -xz -C /tmp/ndi-install/extracted \
+  && extracted="$(find /tmp/ndi-install/extracted -maxdepth 1 -type d -name '*NDI*' | head -1)" \
+  && if [ -z "$extracted" ] && [ -d /tmp/ndi-install/extracted/include ]; then extracted=/tmp/ndi-install/extracted; fi \
+  && cp -R "$extracted"/* /opt/ndi-sdk/ \
+  && for libdir in /opt/ndi-sdk/lib /opt/ndi-sdk/lib/x86_64-linux-gnu; do \
+       if [ -d "$libdir" ]; then \
+         cd "$libdir"; \
+         for lib in lib*.so.*.*.*; do \
+           [ -f "$lib" ] || continue; \
+           base="${lib%%.so*}.so"; \
+           major="${lib#*.so.}"; major="${major%%.*}"; \
+           ln -sf "$lib" "${base}.${major}" 2>/dev/null || true; \
+           ln -sf "$lib" "$base" 2>/dev/null || true; \
+         done; \
+       fi; \
+     done \
+  && rm -rf /tmp/ndi-install
+
+ENV NDI_SDK_DIR=/opt/ndi-sdk
+ENV LD_LIBRARY_PATH=/opt/ndi-sdk/lib/x86_64-linux-gnu:/opt/ndi-sdk/lib
+
+COPY . /src
+
+RUN bash scripts/linux/prepare-linux-bundle.sh \
+  && pnpm install \
+  && pnpm --filter @tandem/shared build \
+  && pnpm --filter @tandem/client exec tauri build \
+  && node scripts/linux/post-bundle-ndi.mjs

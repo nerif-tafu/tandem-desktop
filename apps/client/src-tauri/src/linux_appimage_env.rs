@@ -13,6 +13,10 @@ pub fn prepare() {
     if let Some(gio_modules) = bundled_gio_module_dir() {
         std::env::set_var("GIO_MODULE_DIR", gio_modules);
     }
+
+    if let Some(exe_dir) = current_exe_dir() {
+        prepend_path_var("LD_LIBRARY_PATH", &exe_dir);
+    }
 }
 
 fn running_inside_appimage() -> bool {
@@ -29,4 +33,24 @@ fn set_if_unset(key: &str, value: &str) {
     if std::env::var_os(key).is_none() {
         std::env::set_var(key, value);
     }
+}
+
+fn current_exe_dir() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    exe.parent()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+fn prepend_path_var(key: &str, entry: &str) {
+    let next = match std::env::var_os(key) {
+        Some(existing) => {
+            let mut combined = entry.to_owned();
+            combined.push(':');
+            combined.push_str(&existing.to_string_lossy());
+            combined
+        }
+        None => entry.to_owned(),
+    };
+
+    std::env::set_var(key, next);
 }

@@ -174,6 +174,8 @@ impl Default for PreviewManager {
 }
 
 pub(crate) enum PreviewStream {
+    /// Polled xcap capture (portal screenshot on Wayland). Used for preview and as a
+    /// PipeWire fallback so we never block indefinitely waiting for a screen-share dialog.
     Screen(Monitor),
     Webcam(nokhwa::Camera),
     #[cfg(feature = "ndi")]
@@ -194,8 +196,13 @@ impl PreviewStream {
             CaptureSourceKind::Screen => {
                 super::macos_screen_permission::ensure_access();
                 let monitor_id = sources::parse_id_suffix(&source.id, "screen:")?;
-                let monitor = find_monitor(monitor_id)?;
-                Ok(Self::Screen(monitor))
+                #[cfg(target_os = "linux")]
+                if super::linux_screen::is_wayland_session() {
+                    return Err(CaptureError::CaptureFailed(
+                        "Wayland screen preview requires live portal capture".into(),
+                    ));
+                }
+                Ok(Self::Screen(find_monitor(monitor_id)?))
             }
             CaptureSourceKind::Webcam => Ok(Self::Webcam(open_webcam(&source.id)?)),
             CaptureSourceKind::Ndi => {

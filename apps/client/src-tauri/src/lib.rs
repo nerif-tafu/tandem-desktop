@@ -1,4 +1,4 @@
-mod capture;
+pub mod capture;
 mod logging;
 #[cfg(target_os = "linux")]
 pub mod linux_appimage_env;
@@ -31,6 +31,11 @@ fn stage_ndi_runtime(app: &tauri::App) -> Result<(), String> {
         &["libndi.dylib", "libndi.4.dylib"],
         &["libndi.dylib", "libndi.4.dylib"],
     )
+}
+
+#[cfg(all(target_os = "linux", feature = "ndi"))]
+fn stage_ndi_runtime(app: &tauri::App) -> Result<(), String> {
+    stage_ndi_runtime_file(app, &["libndi.so.6", "libndi.so"], &["libndi.so.6", "libndi.so"])
 }
 
 #[cfg(feature = "ndi")]
@@ -69,6 +74,9 @@ fn stage_ndi_runtime_file(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    capture::ensure_linux_display_env();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             is_dev_mode,
@@ -280,21 +288,52 @@ fn refresh_slot_preview(
 }
 
 #[tauri::command]
-fn start_slot_video(
+async fn start_slot_video(
+    app: tauri::AppHandle,
     slot: String,
     source_id: String,
-    video: tauri::State<'_, Mutex<VideoCaptureManager>>,
 ) -> Result<String, String> {
     if !STREAM_SLOTS.contains(&slot.as_str()) {
         return Err(format!("Unknown slot: {slot}"));
     }
 
     let source = capture::find_source(&source_id).map_err(|error| error.to_string())?;
-    let guard = video
-        .lock()
-        .map_err(|_| "Video capture manager unavailable".to_string())?;
 
-    guard.start_slot(&slot, &source)
+    #[cfg(target_os = "linux")]
+    let portal = {
+        let config_dir = app.path().app_config_dir().ok();
+        let (tx, rx) = std::sync::mpsc::sync_channel(1);
+        let app_for_main = app.clone();
+        app.run_on_main_thread(move || {
+            let _ = tx.send(capture::linux_screen::portal_window_identifier_from_app(
+                &app_for_main,
+            ));
+        })
+        .map_err(|error| error.to_string())?;
+        let window_identifier = rx.recv().map_err(|error| error.to_string())?;
+        capture::linux_screen::LinuxPortalContext {
+            window_identifier,
+            config_dir,
+        }
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let video = app.state::<Mutex<VideoCaptureManager>>();
+        let guard = video
+            .lock()
+            .map_err(|_| "Video capture manager unavailable".to_string())?;
+
+        #[cfg(target_os = "linux")]
+        {
+            guard.start_slot(&slot, &source, portal)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            guard.start_slot(&slot, &source)
+        }
+    })
+    .await
+    .map_err(|error| format!("Capture task failed: {error}"))?
 }
 
 #[tauri::command]

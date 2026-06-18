@@ -29,6 +29,9 @@ fn copy_ndi_runtime(manifest_dir: &Path) {
 
     #[cfg(all(target_os = "macos", feature = "ndi"))]
     copy_ndi_runtime_macos(manifest_dir);
+
+    #[cfg(all(target_os = "linux", feature = "ndi"))]
+    copy_ndi_runtime_linux(manifest_dir);
 }
 
 fn copy_ndi_runtime_windows(manifest_dir: &Path) {
@@ -176,6 +179,84 @@ fn resolve_ndi_sdk_dir() -> Option<PathBuf> {
         "/Library/NDI SDK for macOS",
         "/Library/NDI SDK",
     ] {
+        let path = PathBuf::from(candidate);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+#[cfg(all(target_os = "linux", feature = "ndi"))]
+fn copy_ndi_runtime_linux(manifest_dir: &Path) {
+    let Some(so_src) = resolve_linux_ndi_so() else {
+        println!(
+            "cargo:warning=NDI runtime libndi.so.6 not found — install the NDI SDK for Linux or set NDI_SDK_DIR"
+        );
+        return;
+    };
+
+    println!("cargo:rerun-if-changed={}", so_src.display());
+
+    let profile = env::var("PROFILE").expect("PROFILE");
+    let target_dir = manifest_dir.join("target").join(profile);
+    let runtime_dir = manifest_dir.join("ndi-runtime");
+    if fs::create_dir_all(&runtime_dir).is_err() {
+        println!(
+            "cargo:warning=Failed to create NDI runtime directory at {}",
+            runtime_dir.display()
+        );
+        return;
+    }
+
+    for dest_dir in [&runtime_dir, &target_dir] {
+        copy_linux_ndi_so(&so_src, dest_dir);
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "ndi"))]
+fn copy_linux_ndi_so(so_src: &Path, dest_dir: &Path) {
+    for name in ["libndi.so.6", "libndi.so"] {
+        let dest = dest_dir.join(name);
+        if fs::copy(so_src, &dest).is_ok() {
+            return;
+        }
+    }
+
+    println!(
+        "cargo:warning=Failed to copy NDI runtime library to {}",
+        dest_dir.display()
+    );
+}
+
+#[cfg(all(target_os = "linux", feature = "ndi"))]
+fn resolve_linux_ndi_so() -> Option<PathBuf> {
+    let sdk_dir = resolve_linux_ndi_sdk_dir()?;
+    for candidate in [
+        sdk_dir.join("lib").join("x86_64-linux-gnu").join("libndi.so.6"),
+        sdk_dir.join("lib").join("libndi.so.6"),
+        sdk_dir.join("lib").join("x86_64-linux-gnu").join("libndi.so"),
+        sdk_dir.join("lib").join("libndi.so"),
+    ] {
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+#[cfg(all(target_os = "linux", feature = "ndi"))]
+fn resolve_linux_ndi_sdk_dir() -> Option<PathBuf> {
+    if let Ok(dir) = env::var("NDI_SDK_DIR") {
+        let path = PathBuf::from(dir);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    for candidate in ["/opt/ndi-sdk", "/usr/local/ndi-sdk"] {
         let path = PathBuf::from(candidate);
         if path.exists() {
             return Some(path);

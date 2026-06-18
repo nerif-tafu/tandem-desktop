@@ -1,0 +1,7 @@
+.git
+**/node_modules
+**/target
+apps/client/ndi-sdk/Examples
+apps/client/ndi-sdk/Documentation
+**/.DS_Store
+**/dist

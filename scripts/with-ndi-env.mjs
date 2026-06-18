@@ -27,6 +27,12 @@ function hasNdiMacRuntime(sdkDir) {
   );
 }
 
+function hasNdiLinuxRuntime(sdkDir) {
+  return ['lib/x86_64-linux-gnu/libndi.so.6', 'lib/libndi.so.6', 'lib/x86_64-linux-gnu/libndi.so', 'lib/libndi.so'].some(
+    (relativePath) => existsSync(join(sdkDir, relativePath)),
+  );
+}
+
 export function resolveNdiSdkDir(env = process.env) {
   if (env.NDI_SDK_DIR && existsSync(env.NDI_SDK_DIR)) {
     return env.NDI_SDK_DIR;
@@ -41,6 +47,19 @@ export function resolveNdiSdkDir(env = process.env) {
 
     console.error(
       'NDI SDK for Apple not found. Install it from https://ndi.video/tools/ or set NDI_SDK_DIR.',
+    );
+    process.exit(1);
+  }
+
+  if (process.platform === 'linux') {
+    for (const candidate of ['/opt/ndi-sdk', '/usr/local/ndi-sdk', env.HOME ? join(env.HOME, 'ndi-sdk') : null].filter(Boolean)) {
+      if (hasNdiHeaders(candidate) || hasNdiLinuxRuntime(candidate)) {
+        return candidate;
+      }
+    }
+
+    console.error(
+      'NDI SDK for Linux not found. Install it from https://ndi.video/tools/ or set NDI_SDK_DIR.',
     );
     process.exit(1);
   }
