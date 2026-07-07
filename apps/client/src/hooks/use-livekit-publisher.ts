@@ -7,6 +7,7 @@ import { useSlotPreviewStreams } from '../contexts/slot-preview-streams';
 import type { SlotCaptureState } from '../types/capture';
 import { fetchMediaToken } from '../lib/media-token';
 import { getSlotVideoPublishOptions } from '../lib/livekit-publish-options';
+import { describeLiveKitConnectFailure, isWebRtcAvailable } from '../lib/webrtc-support';
 
 interface SlotPublisher {
   track: MediaStreamTrack;
@@ -25,6 +26,7 @@ export function useLiveKitPublisher(
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'failed'>(
     'idle',
   );
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
     activeSlotsRef.current = new Set(slots.filter((slot) => slot.active).map((slot) => slot.slot));
@@ -33,6 +35,15 @@ export function useLiveKitPublisher(
   useEffect(() => {
     if (!roomCode || !participantId) {
       setConnectionState('idle');
+      setConnectionError(null);
+      return;
+    }
+
+    if (!isWebRtcAvailable()) {
+      const message = describeLiveKitConnectFailure(null);
+      console.error('LiveKit publisher unavailable:', message);
+      setConnectionState('failed');
+      setConnectionError(message);
       return;
     }
 
@@ -40,14 +51,17 @@ export function useLiveKitPublisher(
     const room = new Room();
     roomRef.current = room;
     setConnectionState('connecting');
+    setConnectionError(null);
 
     const connectTimeout = window.setTimeout(() => {
       if (!cancelled && room.state !== ConnectionState.Connected) {
-        console.error('LiveKit publisher connect timed out');
+        const message = 'LiveKit publisher connect timed out after 30s';
+        console.error(message);
+        setConnectionError(message);
         setConnectionState('failed');
         void room.disconnect();
       }
-    }, 20_000);
+    }, 30_000);
 
     const handleConnectionStateChanged = (state: ConnectionState) => {
       if (state === ConnectionState.Connected) {
@@ -65,14 +79,16 @@ export function useLiveKitPublisher(
           return;
         }
 
-        await room.connect(url, token, {
-          rtcConfig: {
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-          },
-        });
+        console.info('LiveKit publisher connecting', { roomCode, url });
+        await room.connect(url, token, { peerConnectionTimeout: 30_000 });
+        if (!cancelled) {
+          console.info('LiveKit publisher connected', { roomCode });
+        }
       } catch (error) {
+        const message = describeLiveKitConnectFailure(error);
         console.error('LiveKit publisher connect failed', error);
         if (!cancelled) {
+          setConnectionError(message);
           setConnectionState('failed');
         }
       }
@@ -93,6 +109,7 @@ export function useLiveKitPublisher(
       void room.disconnect();
       roomRef.current = null;
       setConnectionState('idle');
+      setConnectionError(null);
     };
   }, [roomCode, participantId]);
 
@@ -157,5 +174,5 @@ export function useLiveKitPublisher(
 
   const livekitReady = connectionState === 'connected' || connectionState === 'failed';
 
-  return { livekitReady };
+  return { livekitReady, connectionState, connectionError };
 }

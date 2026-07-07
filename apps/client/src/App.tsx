@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 import {
   DEFAULT_STREAM_SLOTS,
@@ -14,6 +15,7 @@ import {
 
 import { CaptureGrid } from './components/capture-grid';
 import { CreateRoomDialog, type CreateRoomOptions } from './components/create-room-dialog';
+import { ExtensionSetupDialog } from './components/extension-setup-dialog';
 import { LandingView } from './components/landing-view';
 import { LeaveRoomDialog } from './components/leave-room-dialog';
 import { SettingsButton, SettingsDialog } from './components/settings-dialog';
@@ -22,6 +24,7 @@ import { Toast, useToast } from './components/toast';
 import { useDesktopSocket, type DesktopStreamLayout } from './hooks/use-desktop-socket';
 import { usePreventBackgroundThrottling } from './hooks/use-prevent-background-throttling';
 import { getServerUrl } from './lib/server-url';
+import type { PresentationExtensionStatus } from './types/presentation';
 
 type Session = {
   roomCode: string;
@@ -56,6 +59,7 @@ export function App() {
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinPasswordRequired, setJoinPasswordRequired] = useState(false);
   const [sessionBootstrapping, setSessionBootstrapping] = useState(false);
+  const [extensionStatus, setExtensionStatus] = useState<PresentationExtensionStatus | null>(null);
   const { message: toastMessage, visible: toastVisible, showToast } = useToast();
   const {
     error: socketError,
@@ -121,6 +125,7 @@ export function App() {
 
   async function createAndJoinRoom(options: CreateRoomOptions): Promise<void> {
     setLoading(true);
+    setCreateOpen(false);
     setSessionBootstrapping(true);
     setError(null);
 
@@ -150,7 +155,6 @@ export function App() {
 
       const parsed = CreateRoomResponseSchema.parse(createPayload);
       await joinRoom(parsed.room.code, options.password);
-      setCreateOpen(false);
     } catch (joinError) {
       setSessionBootstrapping(false);
       if (joinError instanceof Error && joinError.name === 'ZodError') {
@@ -251,6 +255,41 @@ export function App() {
     return () => window.clearTimeout(timeout);
   }, [sessionBootstrapping]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkExtensionStatus(): Promise<void> {
+      try {
+        const status = await invoke<PresentationExtensionStatus>('get_presentation_extension_status');
+        if (!cancelled) {
+          setExtensionStatus(status);
+        }
+      } catch (error) {
+        console.error('Failed to read presentation extension status', error);
+      }
+    }
+
+    const unlistenPromise = listen<PresentationExtensionStatus>(
+      'presentation-extension-status',
+      (event) => {
+        if (!cancelled) {
+          setExtensionStatus(event.payload);
+        }
+      },
+    );
+
+    void checkExtensionStatus();
+    const retry = window.setTimeout(() => {
+      void checkExtensionStatus();
+    }, 1500);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(retry);
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
   return (
     <div className="relative h-screen overflow-hidden bg-background">
       <Toast message={toastMessage} visible={toastVisible} />
@@ -262,6 +301,8 @@ export function App() {
       )}
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      <ExtensionSetupDialog status={extensionStatus} />
 
       <CreateRoomDialog
         open={createOpen}

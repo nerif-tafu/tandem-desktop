@@ -1,10 +1,9 @@
-use std::fs;
 use std::io::Cursor;
-use std::path::PathBuf;
+use std::os::fd::OwnedFd;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     mpsc::{self, RecvTimeoutError, SyncSender},
-    Arc,
+    Arc, OnceLock,
 };
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -42,11 +41,13 @@ use super::types::CaptureSource;
 
 const PORTAL_INIT_TIMEOUT: Duration = Duration::from_secs(120);
 const FRAME_RECV_TIMEOUT: Duration = Duration::from_millis(250);
-const RESTORE_TOKEN_FILE: &str = "portal-screencast-restore-token";
+
+/// Pseudo source id shown on Wayland. The actual screen is chosen in the
+/// system portal picker every time capture starts (OBS-style).
+pub const PORTAL_SOURCE_ID: &str = "screen:portal";
 
 pub struct LinuxPortalContext {
     pub window_identifier: Option<WindowIdentifier>,
-    pub config_dir: Option<PathBuf>,
 }
 
 pub(crate) fn find_monitor(monitor_id: u32) -> Result<Monitor, CaptureError> {
@@ -97,7 +98,11 @@ impl LinuxScreenCaptureSession {
         frame_slot: Arc<FrameSlot>,
         portal: LinuxPortalContext,
     ) -> Result<Self, CaptureError> {
-        let monitor_id = sources::parse_id_suffix(&source.id, "screen:")?;
+        let monitor_id = if source.id == PORTAL_SOURCE_ID {
+            None
+        } else {
+            Some(sources::parse_id_suffix(&source.id, "screen:")?)
+        };
         let stop = Arc::new(AtomicBool::new(false));
         let (init_tx, init_rx) = mpsc::sync_channel(1);
 
@@ -142,11 +147,82 @@ impl LinuxScreenCaptureSession {
 }
 
 fn run_capture_thread(
-    monitor_id: u32,
+    monitor_id: Option<u32>,
     frame_slot: Arc<FrameSlot>,
     stop: Arc<AtomicBool>,
     init_tx: SyncSender<Result<(), String>>,
     portal: LinuxPortalContext,
+) {
+    match monitor_id {
+        None => run_portal_capture(frame_slot, stop, init_tx, portal),
+        Some(monitor_id) => run_xcap_capture(monitor_id, frame_slot, stop, init_tx),
+    }
+}
+
+/// OBS-style Wayland capture: every capture opens its own portal session and the
+/// user picks the screen in the system dialog. No monitor matching, no cached
+/// sessions, no restore tokens.
+fn run_portal_capture(
+    frame_slot: Arc<FrameSlot>,
+    stop: Arc<AtomicBool>,
+    init_tx: SyncSender<Result<(), String>>,
+    portal: LinuxPortalContext,
+) {
+    tracing::info!("starting portal + PipeWire screen capture (system picker)");
+
+    let (node_id, pipewire_fd) = match open_portal_stream(portal.window_identifier) {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = init_tx.send(Err(error.to_string()));
+            return;
+        }
+    };
+
+    let (first_frame_tx, first_frame_rx) = mpsc::sync_channel(1);
+    let stop_pw = stop.clone();
+    let frame_slot_pw = frame_slot.clone();
+    let pw_join = thread::spawn(move || {
+        if let Err(error) =
+            run_pipewire_loop(node_id, pipewire_fd, frame_slot_pw, stop_pw, first_frame_tx)
+        {
+            tracing::warn!(%error, "pipewire capture loop ended");
+        }
+    });
+
+    match first_frame_rx.recv_timeout(PORTAL_INIT_TIMEOUT) {
+        Ok(Ok(())) => {
+            let _ = init_tx.send(Ok(()));
+        }
+        Ok(Err(message)) => {
+            stop.store(true, Ordering::Relaxed);
+            let _ = init_tx.send(Err(message));
+            let _ = pw_join.join();
+            return;
+        }
+        Err(mpsc::RecvTimeoutError::Timeout) => {
+            stop.store(true, Ordering::Relaxed);
+            let _ = init_tx.send(Err(
+                "PipeWire stream produced no frames after portal approval".into(),
+            ));
+            let _ = pw_join.join();
+            return;
+        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            stop.store(true, Ordering::Relaxed);
+            let _ = init_tx.send(Err("PipeWire capture thread exited early".into()));
+            let _ = pw_join.join();
+            return;
+        }
+    }
+
+    let _ = pw_join.join();
+}
+
+fn run_xcap_capture(
+    monitor_id: u32,
+    frame_slot: Arc<FrameSlot>,
+    stop: Arc<AtomicBool>,
+    init_tx: SyncSender<Result<(), String>>,
 ) {
     let monitor = match find_monitor(monitor_id) {
         Ok(monitor) => monitor,
@@ -157,71 +233,10 @@ fn run_capture_thread(
     };
     let monitor_name = monitor.name().unwrap_or_else(|_| "unknown".into());
 
-    if is_wayland_session() {
-        tracing::info!(
-            monitor_id,
-            monitor_name = %monitor_name,
-            "starting portal + PipeWire screen capture"
-        );
-
-        let config_dir = portal.config_dir.clone();
-        let portal_result =
-            open_portal_stream(portal.window_identifier.as_ref(), config_dir.clone());
-        let (stream_id, restore_token) = match portal_result {
-            Ok(result) => result,
-            Err(error) => {
-                let _ = init_tx.send(Err(error.to_string()));
-                return;
-            }
-        };
-
-        if let Some(token) = restore_token {
-            save_restore_token(config_dir.as_deref(), &token);
-        }
-
-        let (first_frame_tx, first_frame_rx) = mpsc::sync_channel(1);
-        let stop_pw = stop.clone();
-        let frame_slot_pw = frame_slot.clone();
-        let pw_join = thread::spawn(move || {
-            if let Err(error) = run_pipewire_loop(stream_id, frame_slot_pw, stop_pw, first_frame_tx) {
-                tracing::warn!(%error, "pipewire capture loop ended");
-            }
-        });
-
-        match first_frame_rx.recv_timeout(PORTAL_INIT_TIMEOUT) {
-            Ok(Ok(())) => {
-                let _ = init_tx.send(Ok(()));
-            }
-            Ok(Err(message)) => {
-                stop.store(true, Ordering::Relaxed);
-                let _ = init_tx.send(Err(message));
-                let _ = pw_join.join();
-                return;
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => {
-                stop.store(true, Ordering::Relaxed);
-                let _ = init_tx.send(Err(
-                    "PipeWire stream produced no frames after portal approval".into(),
-                ));
-                let _ = pw_join.join();
-                return;
-            }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                stop.store(true, Ordering::Relaxed);
-                let _ = init_tx.send(Err("PipeWire capture thread exited early".into()));
-                let _ = pw_join.join();
-                return;
-            }
-        }
-
-        let _ = pw_join.join();
-        return;
-    }
-
     tracing::info!(
         monitor_id,
         monitor_name = %monitor_name,
-        "starting xcap PipeWire screen capture (X11 session)"
+        "starting xcap screen capture (X11 session)"
     );
 
     let setup = (|| -> Result<(xcap::VideoRecorder, mpsc::Receiver<Frame>), CaptureError> {
@@ -260,80 +275,150 @@ fn run_capture_thread(
     }
 }
 
+struct PortalRequest {
+    window_identifier: Option<WindowIdentifier>,
+    reply: SyncSender<Result<(u32, OwnedFd), CaptureError>>,
+}
+
+static PORTAL_WORKER: OnceLock<std::sync::Mutex<mpsc::Sender<PortalRequest>>> = OnceLock::new();
+
+/// All portal D-Bus calls must run on one long-lived tokio runtime: ashpd
+/// caches its zbus connection globally, and that connection's I/O task lives
+/// on the runtime that first created it. Short-lived per-capture runtimes
+/// would leave the cached connection dead and hang every later request.
+fn portal_worker() -> &'static std::sync::Mutex<mpsc::Sender<PortalRequest>> {
+    PORTAL_WORKER.get_or_init(|| {
+        let (tx, rx) = mpsc::channel::<PortalRequest>();
+        thread::spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(error) => {
+                    tracing::error!(%error, "failed to build portal worker runtime");
+                    return;
+                }
+            };
+
+            while let Ok(request) = rx.recv() {
+                let result = runtime
+                    .block_on(open_portal_stream_async(request.window_identifier.as_ref()));
+                let _ = request.reply.send(result);
+            }
+        });
+        std::sync::Mutex::new(tx)
+    })
+}
+
+/// Open a fresh portal screencast session. Always shows the system picker and
+/// captures whichever screen the user selects.
 fn open_portal_stream(
+    window_identifier: Option<WindowIdentifier>,
+) -> Result<(u32, OwnedFd), CaptureError> {
+    let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+    let request = PortalRequest {
+        window_identifier,
+        reply: reply_tx,
+    };
+
+    portal_worker()
+        .lock()
+        .map_err(|_| CaptureError::CaptureFailed("portal worker unavailable".into()))?
+        .send(request)
+        .map_err(|_| CaptureError::CaptureFailed("portal worker stopped".into()))?;
+
+    reply_rx
+        .recv_timeout(PORTAL_INIT_TIMEOUT)
+        .map_err(|_| {
+            CaptureError::CaptureFailed(
+                "Timed out waiting for the screen selection dialog".into(),
+            )
+        })?
+}
+
+async fn open_portal_stream_async(
     window_identifier: Option<&WindowIdentifier>,
-    config_dir: Option<PathBuf>,
-) -> Result<(u32, Option<String>), CaptureError> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
+) -> Result<(u32, OwnedFd), CaptureError> {
+    let proxy = Screencast::new()
+            .await
         .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
 
-    runtime.block_on(async {
-        let proxy = Screencast::new()
-            .await
-            .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    let session = proxy
+        .create_session()
+        .await
+        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
 
-        let session = proxy
-            .create_session()
-            .await
-            .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    proxy
+        .select_sources(
+            &session,
+            CursorMode::Hidden,
+            BitFlags::from(SourceType::Monitor),
+            false,
+            None,
+            PersistMode::DoNot,
+        )
+        .await
+        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?
+        .response()
+        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
 
-        let restore_token = load_restore_token(config_dir.as_deref());
+    tracing::info!("portal screen picker shown; choose the screen to share");
 
-        proxy
-            .select_sources(
-                &session,
-                CursorMode::Hidden,
-                BitFlags::from(SourceType::Monitor),
-                false,
-                restore_token.as_deref(),
-                PersistMode::Application,
-            )
-            .await
-            .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?
-            .response()
-            .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    let streams = proxy
+        .start(&session, window_identifier)
+        .await
+        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?
+        .response()
+        .map_err(|error| {
+            CaptureError::CaptureFailed(format!("screen selection cancelled: {error}"))
+        })?;
 
-        tracing::info!("portal screen-share picker shown; select a monitor and confirm");
-
-        let streams = proxy
-            .start(&session, window_identifier)
-            .await
-            .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?
-            .response()
-            .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
-
-        let stream = streams.streams().first().ok_or_else(|| {
+    let node_id = streams
+        .streams()
+        .first()
+        .map(|stream| stream.pipe_wire_node_id())
+        .ok_or_else(|| {
             CaptureError::CaptureFailed("portal returned no capture streams".into())
         })?;
 
-        Ok((stream.pipe_wire_node_id(), streams.restore_token().map(str::to_string)))
-    })
+    let pipewire_fd = proxy
+        .open_pipe_wire_remote(&session)
+        .await
+        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+
+    tracing::info!(node_id, "portal screencast stream selected");
+
+    Ok((node_id, pipewire_fd))
 }
 
 struct ListenerUserData {
     format: VideoInfoRaw,
+    format_ready: AtomicBool,
 }
 
 fn run_pipewire_loop(
     stream_id: u32,
+    pipewire_fd: OwnedFd,
     frame_slot: Arc<FrameSlot>,
     stop: Arc<AtomicBool>,
     first_frame_tx: SyncSender<Result<(), String>>,
 ) -> Result<(), CaptureError> {
     pipewire::init();
 
-    let main_loop =
-        MainLoopRc::new(None).map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
-    let context =
-        ContextRc::new(&main_loop, None).map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    tracing::debug!(stream_id, "connecting pipewire stream to portal node via remote fd");
+
+    let main_loop = MainLoopRc::new(None)
+        .map_err(|error| CaptureError::CaptureFailed(format!("pipewire main loop: {error}")))?;
+    let context = ContextRc::new(&main_loop, None)
+        .map_err(|error| CaptureError::CaptureFailed(format!("pipewire context: {error}")))?;
     let core = context
-        .connect_rc(None)
-        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+        .connect_fd_rc(pipewire_fd, None)
+        .map_err(|error| CaptureError::CaptureFailed(format!("pipewire portal connect: {error}")))?;
 
     let user_data = ListenerUserData {
         format: VideoInfoRaw::default(),
+        format_ready: AtomicBool::new(false),
     };
 
     let stream = StreamRc::new(
@@ -345,7 +430,7 @@ fn run_pipewire_loop(
             *MEDIA_ROLE => "Screen",
         },
     )
-    .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    .map_err(|error| CaptureError::CaptureFailed(format!("pipewire stream create: {error}")))?;
 
     let stop_flag = stop.clone();
     let first_frame_flag = Arc::new(AtomicBool::new(false));
@@ -366,10 +451,19 @@ fn run_pipewire_loop(
             if media_type != MediaType::Video || media_subtype != MediaSubtype::Raw {
                 return;
             }
-            let _ = user_data.format.parse(param);
+            if user_data.format.parse(param).is_ok() {
+                user_data.format_ready.store(true, Ordering::Relaxed);
+                let size = user_data.format.size();
+                tracing::debug!(
+                    width = size.width,
+                    height = size.height,
+                    format = ?user_data.format.format(),
+                    "pipewire capture format negotiated"
+                );
+            }
         })
         .process(move |stream, user_data| {
-            if stop_flag.load(Ordering::Relaxed) {
+            if stop_flag.load(Ordering::Relaxed) || !user_data.format_ready.load(Ordering::Relaxed) {
                 return;
             }
             let Some(mut buffer) = stream.dequeue_buffer() else {
@@ -380,39 +474,22 @@ fn run_pipewire_loop(
                 return;
             }
             let size = user_data.format.size();
+            if size.width == 0 || size.height == 0 {
+                return;
+            }
+            let stride = datas[0].chunk().stride() as usize;
             let Some(frame_data) = datas[0].data() else {
                 return;
             };
 
-            let raw = match user_data.format.format() {
-                VideoFormat::RGB => {
-                    let mut buf = vec![0; (size.width * size.height * 4) as usize];
-                    for (src, dst) in frame_data.chunks_exact(3).zip(buf.chunks_exact_mut(4)) {
-                        dst[0] = src[0];
-                        dst[1] = src[1];
-                        dst[2] = src[2];
-                        dst[3] = 255;
-                    }
-                    buf
-                }
-                VideoFormat::RGBA => frame_data.to_vec(),
-                VideoFormat::RGBx => frame_data.to_vec(),
-                VideoFormat::BGRx => {
-                    let mut buf = frame_data.to_vec();
-                    for px in buf.chunks_exact_mut(4) {
-                        px.swap(0, 2);
-                    }
-                    buf
-                }
-                other => {
-                    tracing::debug!(?other, "unsupported pipewire pixel format");
-                    return;
-                }
+            let Some(raw) = frame_to_rgba(frame_data, stride, &user_data.format) else {
+                return;
             };
 
             frame_slot.publish(size.width, size.height, raw);
 
             if !first_frame_flag_cb.swap(true, Ordering::Relaxed) {
+                tracing::info!(stream_id, width = size.width, height = size.height, "pipewire capture producing frames");
                 let _ = first_frame_tx_cb.send(Ok(()));
             }
         })
@@ -470,7 +547,11 @@ fn run_pipewire_loop(
             StreamFlags::AUTOCONNECT | StreamFlags::MAP_BUFFERS,
             &mut params,
         )
-        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+        .map_err(|error| {
+            CaptureError::CaptureFailed(format!(
+                "pipewire stream connect to portal node {stream_id}: {error}"
+            ))
+        })?;
 
     let (active_sender, active_receiver) = channel::channel::<bool>();
     let _attached = active_receiver.attach(main_loop.loop_(), move |active| {
@@ -489,27 +570,71 @@ fn run_pipewire_loop(
     Ok(())
 }
 
-fn load_restore_token(config_dir: Option<&std::path::Path>) -> Option<String> {
-    let path = config_dir?.join(RESTORE_TOKEN_FILE);
-    let token = fs::read_to_string(path).ok()?;
-    let token = token.trim();
-    if token.is_empty() {
-        None
-    } else {
-        Some(token.to_string())
+fn frame_to_rgba(frame_data: &[u8], stride: usize, format: &VideoInfoRaw) -> Option<Vec<u8>> {
+    let width = format.size().width as usize;
+    let height = format.size().height as usize;
+    if width == 0 || height == 0 {
+        return None;
     }
+
+    let pixel_count = width.checked_mul(height)?;
+    let mut rgba = vec![0_u8; pixel_count.checked_mul(4)?];
+
+    match format.format() {
+        VideoFormat::RGBA => copy_rows(frame_data, stride, width, height, 4, &mut rgba, 4, |src, dst| {
+            dst.copy_from_slice(src);
+        })?,
+        VideoFormat::RGBx => copy_rows(frame_data, stride, width, height, 4, &mut rgba, 4, |src, dst| {
+            dst[0] = src[0];
+            dst[1] = src[1];
+            dst[2] = src[2];
+            dst[3] = 255;
+        })?,
+        VideoFormat::BGRx => copy_rows(frame_data, stride, width, height, 4, &mut rgba, 4, |src, dst| {
+            dst[0] = src[2];
+            dst[1] = src[1];
+            dst[2] = src[0];
+            dst[3] = 255;
+        })?,
+        VideoFormat::RGB => copy_rows(frame_data, stride, width, height, 3, &mut rgba, 4, |src, dst| {
+            dst[0] = src[0];
+            dst[1] = src[1];
+            dst[2] = src[2];
+            dst[3] = 255;
+        })?,
+        other => {
+            tracing::debug!(?other, "unsupported pipewire pixel format");
+            return None;
+        }
+    }
+
+    Some(rgba)
 }
 
-fn save_restore_token(config_dir: Option<&std::path::Path>, token: &str) {
-    let Some(config_dir) = config_dir else {
-        return;
-    };
-    if let Err(error) = fs::create_dir_all(config_dir) {
-        tracing::warn!(%error, "failed to create config dir for portal restore token");
-        return;
+fn copy_rows(
+    src: &[u8],
+    src_stride: usize,
+    width: usize,
+    height: usize,
+    src_bpp: usize,
+    dst: &mut [u8],
+    dst_bpp: usize,
+    mut copy_pixel: impl FnMut(&[u8], &mut [u8]),
+) -> Option<()> {
+    let row_bytes = width.checked_mul(src_bpp)?;
+    let effective_stride = src_stride.max(row_bytes);
+    let dst_row_bytes = width.checked_mul(dst_bpp)?;
+
+    for row in 0..height {
+        let src_start = row.checked_mul(effective_stride)?;
+        let src_row = src.get(src_start..src_start + row_bytes)?;
+        let dst_start = row.checked_mul(dst_row_bytes)?;
+        let dst_row = dst.get_mut(dst_start..dst_start + dst_row_bytes)?;
+
+        for (src_px, dst_px) in src_row.chunks_exact(src_bpp).zip(dst_row.chunks_exact_mut(dst_bpp)) {
+            copy_pixel(src_px, dst_px);
+        }
     }
-    let path = config_dir.join(RESTORE_TOKEN_FILE);
-    if let Err(error) = fs::write(path, token) {
-        tracing::warn!(%error, "failed to persist portal restore token");
-    }
+
+    Some(())
 }

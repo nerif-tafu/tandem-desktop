@@ -23,6 +23,12 @@ export const SLOT_LABELS: Record<StreamSlot, string> = {
   aux2: 'Auxiliary 2',
 };
 
+/**
+ * Pseudo screen source used on Linux Wayland: assigning it opens the system
+ * screen picker (portal dialog) where the user chooses which screen to share.
+ */
+export const PORTAL_SCREEN_SOURCE_ID = 'screen:portal';
+
 export const SOURCE_KIND_OPTIONS: { kind: CaptureSourceKind; label: string }[] = [
   { kind: 'screen', label: 'Screen' },
   { kind: 'webcam', label: 'Webcam' },

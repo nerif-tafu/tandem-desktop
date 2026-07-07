@@ -1,0 +1,8 @@
+{
+  "uuid": "window-targeting@casa.tafu.tandem",
+  "name": "Tandem Window Targeting",
+  "description": "Lists and activates application windows for the Tandem remote clicker.",
+  "shell-version": ["46", "47", "48", "49", "50"],
+  "version": 1,
+  "url": "https://tafu.casa/tandem"
+}

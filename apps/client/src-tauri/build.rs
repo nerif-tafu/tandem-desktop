@@ -19,6 +19,8 @@ fn main() {
     }
 
     copy_ndi_runtime(&manifest_dir);
+    #[cfg(target_os = "linux")]
+    copy_gnome_shell_extension(&manifest_dir);
     tauri_build::build();
 }
 
@@ -264,4 +266,64 @@ fn resolve_linux_ndi_sdk_dir() -> Option<PathBuf> {
     }
 
     None
+}
+
+#[cfg(target_os = "linux")]
+fn copy_gnome_shell_extension(manifest_dir: &Path) {
+    let uuid = "window-targeting@casa.tafu.tandem";
+    let src = manifest_dir
+        .join("..")
+        .join("gnome-shell-extension")
+        .join(uuid);
+
+    println!("cargo:rerun-if-changed={}", src.join("metadata.json").display());
+    println!("cargo:rerun-if-changed={}", src.join("extension.js").display());
+
+    if !src.join("metadata.json").is_file() {
+        println!(
+            "cargo:warning=GNOME Shell extension missing at {} — Linux window targeting will not work until it is present",
+            src.display()
+        );
+        return;
+    }
+
+    let target_dir = cargo_target_profile_dir(manifest_dir);
+    let dest = target_dir.join("gnome-shell-extension").join(uuid);
+
+    if let Err(error) = copy_dir_recursive(&src, &dest) {
+        println!(
+            "cargo:warning=Failed to copy GNOME Shell extension to {}: {error}",
+            dest.display()
+        );
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn cargo_target_profile_dir(manifest_dir: &Path) -> PathBuf {
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".into());
+    if let Ok(dir) = env::var("CARGO_TARGET_DIR") {
+        return PathBuf::from(dir).join(profile);
+    }
+
+    manifest_dir.join("target").join(profile)
+}
+
+#[cfg(target_os = "linux")]
+fn copy_dir_recursive(source: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest).map_err(|error| error.to_string())?;
+
+    for entry in fs::read_dir(source).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        let src_path = entry.path();
+        let dst_path = dest.join(entry.file_name());
+
+        if file_type.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else if file_type.is_file() {
+            fs::copy(&src_path, &dst_path).map_err(|error| error.to_string())?;
+        }
+    }
+
+    Ok(())
 }

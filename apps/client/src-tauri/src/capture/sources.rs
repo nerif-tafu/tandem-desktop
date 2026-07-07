@@ -54,6 +54,17 @@ pub fn list_all_sources() -> Result<Vec<CaptureSource>, CaptureError> {
 pub fn list_presentation_windows() -> Result<Vec<super::types::PresentationWindow>, CaptureError> {
     super::macos_screen_permission::ensure_access();
 
+    #[cfg(target_os = "linux")]
+    {
+        super::ensure_linux_display_env();
+        crate::linux_gnome_extension::ensure_installed(None);
+
+        if crate::linux_gnome_extension::is_applicable() && crate::linux_gnome_extension::dbus_ping() {
+            return crate::linux_gnome_extension::list_windows()
+                .map_err(CaptureError::ListFailed);
+        }
+    }
+
     let mut windows = Vec::new();
 
     for window in xcap::Window::all().map_err(|error| CaptureError::ListFailed(error.to_string()))? {
@@ -152,6 +163,20 @@ fn list_screens() -> Result<Vec<CaptureSource>, CaptureError> {
         );
     }
 
+    #[cfg(target_os = "linux")]
+    {
+        // On Wayland the compositor decides which screen is shared via the portal
+        // picker, so we expose a single source that opens the system dialog
+        // (OBS-style) instead of enumerating monitors.
+        if super::linux_screen::is_wayland_session() {
+            return Ok(vec![CaptureSource {
+                id: super::linux_screen::PORTAL_SOURCE_ID.to_string(),
+                kind: CaptureSourceKind::Screen,
+                label: "Screen (choose in system dialog)".to_string(),
+            }]);
+        }
+    }
+
     #[cfg(not(windows))]
     {
         let mut sources = Vec::new();
@@ -187,6 +212,19 @@ fn list_webcams() -> Result<Vec<CaptureSource>, CaptureError> {
     let cameras = nokhwa::query(nokhwa::utils::ApiBackend::Auto)
         .map_err(|error| CaptureError::ListFailed(error.to_string()))?;
 
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(super::linux_webcam::label_cameras(&cameras)
+            .into_iter()
+            .map(|(index, label)| CaptureSource {
+                id: format!("webcam:{index}"),
+                kind: CaptureSourceKind::Webcam,
+                label,
+            })
+            .collect());
+    }
+
+    #[cfg(not(target_os = "linux"))]
     Ok(cameras
         .into_iter()
         .enumerate()

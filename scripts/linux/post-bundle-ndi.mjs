@@ -10,7 +10,7 @@ if (process.platform !== 'linux') {
 }
 
 if (!existsSync(runtimeSo)) {
-  console.warn(`Linux NDI runtime missing at ${runtimeSo}; AppImage will ship without bundled NDI`);
+  console.warn(`Linux NDI runtime missing at ${runtimeSo}; Debian package will ship without bundled NDI`);
   process.exit(0);
 }
 

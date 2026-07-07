@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Tandem AppImage on this Linux host (e.g. finn-rm test machine).
+# Build Tandem Debian package on this Linux host (e.g. finn-rm test machine).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -116,7 +116,7 @@ install_ndi_sdk() {
   echo "NDI SDK installed to $NDI_SDK_DIR"
 }
 
-build_appimage() {
+build_deb() {
   # shellcheck disable=SC1091
   [[ -f "$HOME/.cargo/env" ]] && source "$HOME/.cargo/env"
 
@@ -126,18 +126,17 @@ build_appimage() {
 
   pnpm install
   pnpm --filter @tandem/shared build
-  bash scripts/linux/prepare-linux-bundle.sh
   pnpm --filter @tandem/client exec tauri build
   node scripts/linux/post-bundle-ndi.mjs
 
   local built
-  built="$(ls -1 apps/client/src-tauri/target/release/bundle/appimage/*.AppImage | head -1)"
+  built="$(ls -1 apps/client/src-tauri/target/release/bundle/deb/*.deb | head -1)"
   mkdir -p "$HOME/tandem-test" "$HOME/Downloads"
-  cp -f "$built" "$HOME/tandem-test/Tandem-linux-x86_64.AppImage"
-  cp -f "$built" "$HOME/Downloads/Tandem-linux-x86_64.AppImage"
-  chmod +x "$HOME/tandem-test/Tandem-linux-x86_64.AppImage" "$HOME/Downloads/Tandem-linux-x86_64.AppImage"
+  cp -f "$built" "$HOME/tandem-test/Tandem-linux-amd64.deb"
+  cp -f "$built" "$HOME/Downloads/Tandem-linux-amd64.deb"
   echo "Built: $built"
   echo "Copied to ~/tandem-test and ~/Downloads"
+  echo "Install with: sudo apt install ./Tandem-linux-amd64.deb"
 }
 
 ensure_swap
@@ -145,4 +144,4 @@ install_system_deps
 install_rust
 install_node
 install_ndi_sdk
-build_appimage
+build_deb

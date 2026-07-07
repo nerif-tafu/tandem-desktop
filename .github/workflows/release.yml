@@ -235,13 +235,7 @@ jobs:
 
 
 
-      - name: Prepare Linux AppImage hook
-
-        run: bash scripts/linux/prepare-linux-bundle.sh
-
-
-
-      - name: Build Linux AppImage
+      - name: Build Linux Debian package
 
         env:
 
@@ -257,7 +251,7 @@ jobs:
 
           mkdir -p release-assets
 
-          cp apps/client/src-tauri/target/release/bundle/appimage/*.AppImage release-assets/Tandem-linux-x86_64.AppImage
+          cp apps/client/src-tauri/target/release/bundle/deb/*.deb release-assets/Tandem-linux-amd64.deb
 
 
 
@@ -267,7 +261,7 @@ jobs:
 
           name: linux
 
-          path: release-assets/Tandem-linux-x86_64.AppImage
+          path: release-assets/Tandem-linux-amd64.deb
 
 
 
@@ -299,6 +293,6 @@ jobs:
 
             release-assets/macos/Tandem-macos.dmg
 
-            release-assets/linux/Tandem-linux-x86_64.AppImage
+            release-assets/linux/Tandem-linux-amd64.deb
 
 

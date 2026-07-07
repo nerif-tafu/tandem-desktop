@@ -103,7 +103,10 @@ function CaptureGridContent({
 }: CaptureGridProps) {
   const { sources, slots, loading: sourcesLoading, error, assignSource, refreshSources } =
     useCaptureSources(true);
-  const captureSuspended = useSuspendCaptureWhenInactive(true);
+  // Linux uses portal-driven capture: restarting after minimize would re-open
+  // the system screen picker, so keep capture running while minimized.
+  const suspendWhenInactive = !/Linux/i.test(navigator.userAgent);
+  const captureSuspended = useSuspendCaptureWhenInactive(suspendWhenInactive);
   useClientDiagnostics(true);
   const [captureResumeNonce, setCaptureResumeNonce] = useState(0);
   const captureSuspendedRef = useRef(captureSuspended);
@@ -117,8 +120,9 @@ function CaptureGridContent({
   }, [captureSuspended]);
 
   useSlotCapture(slots, captureSuspended, captureResumeNonce);
-  const { livekitReady } = useLiveKitPublisher(roomCode, participantId, slots);
+  const { livekitReady, connectionState, connectionError } = useLiveKitPublisher(roomCode, participantId, slots);
   const bootstrapReportedRef = useRef(false);
+  const livekitErrorToastRef = useRef<string | null>(null);
   const [enabledAuxSlots, setEnabledAuxSlots] = useState<AuxStreamSlot[]>([]);
   const [auxLabels, setAuxLabels] = useState<AuxSlotLabels>({});
   const { message: toastMessage, visible: toastVisible, showToast } = useToast();
@@ -130,6 +134,19 @@ function CaptureGridContent({
   useEffect(() => {
     onStreamLayoutChange?.({ visibleSlots, auxLabels });
   }, [onStreamLayoutChange, visibleSlots, auxLabels]);
+
+  useEffect(() => {
+    if (connectionState !== 'failed' || !connectionError) {
+      return;
+    }
+
+    if (livekitErrorToastRef.current === connectionError) {
+      return;
+    }
+
+    livekitErrorToastRef.current = connectionError;
+    showToast(connectionError);
+  }, [connectionState, connectionError, showToast]);
 
   useEffect(() => {
     if (bootstrapReportedRef.current) {

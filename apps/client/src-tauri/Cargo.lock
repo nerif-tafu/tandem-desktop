@@ -4483,6 +4483,7 @@ version = "1.1.7"
 dependencies = [
  "ashpd",
  "base64 0.22.1",
+ "dirs",
  "enigo",
  "enumflags2",
  "futures-util",
@@ -4491,6 +4492,7 @@ dependencies = [
  "grafton-ndi",
  "gtk",
  "image",
+ "libc",
  "nokhwa",
  "pipewire",
  "serde",
@@ -4505,6 +4507,7 @@ dependencies = [
  "windows 0.62.2",
  "windows-capture",
  "xcap",
+ "zbus",
 ]
 
 [[package]]

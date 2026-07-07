@@ -2,6 +2,8 @@ pub mod capture;
 mod logging;
 #[cfg(target_os = "linux")]
 pub mod linux_appimage_env;
+#[cfg(target_os = "linux")]
+mod linux_gnome_extension;
 mod ndi_config;
 mod presentation;
 mod window_icon;
@@ -13,7 +15,7 @@ use capture::{
     SlotCaptureState, VideoCaptureManager, STREAM_SLOTS, slot_label,
 };
 use presentation::KeyboardPresentationController;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[cfg(all(windows, feature = "ndi"))]
 fn stage_ndi_runtime(app: &tauri::App) -> Result<(), String> {
@@ -98,6 +100,7 @@ pub fn run() {
             append_client_log,
             get_client_log_path,
             get_capture_diagnostics,
+            get_presentation_extension_status,
         ])
         .setup(|app| {
             if let Ok(log_dir) = app.path().app_log_dir() {
@@ -118,6 +121,17 @@ pub fn run() {
 
             #[cfg(feature = "ndi")]
             stage_ndi_runtime(app)?;
+
+            #[cfg(target_os = "linux")]
+            {
+                linux_gnome_extension::ensure_installed(Some(app.handle()));
+                emit_presentation_extension_status(app.handle());
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(750));
+                    emit_presentation_extension_status(&handle);
+                });
+            }
 
             app.manage(KeyboardPresentationController::new());
             app.manage(Mutex::new(CaptureManager::new()));
@@ -204,6 +218,58 @@ fn list_capture_sources() -> Result<Vec<CaptureSource>, String> {
 #[tauri::command]
 fn list_presentation_windows() -> Result<Vec<PresentationWindow>, String> {
     capture::list_presentation_windows().map_err(|error| error.to_string())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PresentationExtensionStatus {
+    applicable: bool,
+    installed: bool,
+    enabled: bool,
+    active: bool,
+    needs_logout: bool,
+    message: Option<String>,
+}
+
+fn presentation_extension_status(app: &tauri::AppHandle) -> PresentationExtensionStatus {
+    #[cfg(target_os = "linux")]
+    {
+        let status = linux_gnome_extension::status(Some(app));
+        tracing::info!(?status, "presentation extension status");
+        return PresentationExtensionStatus {
+            applicable: status.applicable,
+            installed: status.installed,
+            enabled: status.enabled,
+            active: status.active,
+            needs_logout: status.needs_logout,
+            message: status.message,
+        };
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = app;
+        PresentationExtensionStatus {
+            applicable: false,
+            installed: false,
+            enabled: false,
+            active: false,
+            needs_logout: false,
+            message: None,
+        }
+    }
+}
+
+fn emit_presentation_extension_status(app: &tauri::AppHandle) {
+    let payload = presentation_extension_status(app);
+    if let Err(error) = app.emit("presentation-extension-status", payload) {
+        tracing::warn!(%error, "failed to emit presentation extension status");
+    }
+}
+
+#[tauri::command]
+fn get_presentation_extension_status(app: tauri::AppHandle) -> PresentationExtensionStatus {
+    presentation_extension_status(&app)
 }
 
 #[tauri::command]
@@ -301,7 +367,6 @@ async fn start_slot_video(
 
     #[cfg(target_os = "linux")]
     let portal = {
-        let config_dir = app.path().app_config_dir().ok();
         let (tx, rx) = std::sync::mpsc::sync_channel(1);
         let app_for_main = app.clone();
         app.run_on_main_thread(move || {
@@ -311,10 +376,7 @@ async fn start_slot_video(
         })
         .map_err(|error| error.to_string())?;
         let window_identifier = rx.recv().map_err(|error| error.to_string())?;
-        capture::linux_screen::LinuxPortalContext {
-            window_identifier,
-            config_dir,
-        }
+        capture::linux_screen::LinuxPortalContext { window_identifier }
     };
 
     tauri::async_runtime::spawn_blocking(move || {

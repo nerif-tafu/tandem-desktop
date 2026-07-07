@@ -66,6 +66,8 @@ EXCLUDE_LIBRARIES=(
   "libblkid.so.1"
   "libelf.so.1"
   "libudev.so.1"
+  # Must match the session PipeWire daemon (bundled 22.04 client fails against 1.6.x).
+  "libpipewire-0.3.so.0"
 )
 EXCLUDE_ARGS=()
 for lib in "${EXCLUDE_LIBRARIES[@]}"; do

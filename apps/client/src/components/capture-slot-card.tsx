@@ -5,7 +5,7 @@ import { AUX_SLOT_LABEL_MAX_LENGTH, type StreamSlot } from '@tandem/shared';
 import { useSlotPreviewStreams } from '../contexts/slot-preview-streams';
 import { SlotPreviewVideo } from './slot-preview-video';
 import type { CaptureSource, CaptureSourceKind, SlotCaptureState } from '../types/capture';
-import { SOURCE_KIND_OPTIONS, kindMatchesFilter } from '../types/capture';
+import { PORTAL_SCREEN_SOURCE_ID, SOURCE_KIND_OPTIONS, kindMatchesFilter } from '../types/capture';
 
 const SLOT_TITLE_CLASS =
   'block h-5 w-full truncate border-b border-transparent text-sm font-medium leading-5';
@@ -80,6 +80,13 @@ export function CaptureSlotCard({
     [sources, kindFilter],
   );
 
+  // Linux Wayland: the compositor picks the screen via the system portal
+  // dialog, so screens are represented by a single pseudo source and the
+  // dropdown is replaced with a "Select screen" button.
+  const usesPortalScreenPicker =
+    kindFilter === 'screen' &&
+    filteredSources.some((source) => source.id === PORTAL_SCREEN_SOURCE_ID);
+
   useEffect(() => {
     setSelectedId(state?.source?.id ?? '');
   }, [state?.source?.id]);
@@ -110,6 +117,20 @@ export function CaptureSlotCard({
     setBusy(true);
     try {
       await onAssign(slot, selectedId || null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function selectPortalScreen(): Promise<void> {
+    setBusy(true);
+    try {
+      // Re-assigning the same source id would not restart capture, so clear
+      // first to guarantee the system picker opens every time.
+      if (state?.source?.id === PORTAL_SCREEN_SOURCE_ID) {
+        await onAssign(slot, null);
+      }
+      await onAssign(slot, PORTAL_SCREEN_SOURCE_ID);
     } finally {
       setBusy(false);
     }
@@ -208,46 +229,69 @@ export function CaptureSlotCard({
           ))}
         </div>
 
-        <select
-          className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-          value={selectedId}
-          onMouseDown={refreshSourcesOnOpen}
-          onChange={(event) => setSelectedId(event.target.value)}
-        >
-          <option value="">Choose a source…</option>
-          {filteredSources.map((source) => (
-            <option key={source.id} value={source.id}>
-              {source.label}
-            </option>
-          ))}
-        </select>
+        {usesPortalScreenPicker ? (
+          <>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="h-9 flex-1 rounded-xl border border-border text-sm font-medium hover:bg-muted disabled:opacity-50"
+                disabled={busy || !state?.active}
+                onClick={() => void clearSource()}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="h-9 flex-1 rounded-xl bg-gradient-to-r from-accent to-accent-secondary text-sm font-medium text-white disabled:opacity-50"
+                disabled={busy}
+                onClick={() => void selectPortalScreen()}
+              >
+                {busy ? 'Waiting for picker…' : 'Select screen'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <select
+              className="h-9 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              value={selectedId}
+              onMouseDown={refreshSourcesOnOpen}
+              onChange={(event) => setSelectedId(event.target.value)}
+            >
+              <option value="">Choose a source…</option>
+              {filteredSources.map((source) => (
+                <option key={source.id} value={source.id}>
+                  {source.label}
+                </option>
+              ))}
+            </select>
 
-        {filteredSources.length === 0 && (
-          <p className="text-xs text-muted-foreground">
-            {kindFilter === 'ndi'
-              ? 'No NDI sources found on the network.'
-              : 'No sources available for this type.'}
-          </p>
+            {filteredSources.length === 0 && kindFilter !== 'ndi' && (
+              <p className="text-xs text-muted-foreground">
+                No sources available for this type.
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="h-9 flex-1 rounded-xl border border-border text-sm font-medium hover:bg-muted disabled:opacity-50"
+                disabled={busy || !state?.active}
+                onClick={() => void clearSource()}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="h-9 flex-1 rounded-xl bg-gradient-to-r from-accent to-accent-secondary text-sm font-medium text-white disabled:opacity-50"
+                disabled={busy || !selectedId || selectionMatchesApplied}
+                onClick={() => void applySource()}
+              >
+                {busy ? 'Applying…' : 'Apply'}
+              </button>
+            </div>
+          </>
         )}
-
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="h-9 flex-1 rounded-xl border border-border text-sm font-medium hover:bg-muted disabled:opacity-50"
-            disabled={busy || !state?.active}
-            onClick={() => void clearSource()}
-          >
-            Clear
-          </button>
-          <button
-            type="button"
-            className="h-9 flex-1 rounded-xl bg-gradient-to-r from-accent to-accent-secondary text-sm font-medium text-white disabled:opacity-50"
-            disabled={busy || !selectedId || selectionMatchesApplied}
-            onClick={() => void applySource()}
-          >
-            {busy ? 'Applying…' : 'Apply'}
-          </button>
-        </div>
       </div>
     </article>
   );

@@ -22,10 +22,11 @@ export async function fetchMediaToken(
   const parsed = MediaTokenResponseSchema.parse(await response.json());
   const isDev = await invoke<boolean>('is_dev_mode');
 
+  const clientHostname =
+    isDev && typeof window !== 'undefined' ? window.location.hostname : undefined;
+
   return {
     ...parsed,
-    url: isDev
-      ? resolveLiveKitUrlForClient(parsed.url, 'localhost')
-      : resolveLiveKitUrlForClient(parsed.url),
+    url: resolveLiveKitUrlForClient(parsed.url, clientHostname),
   };
 }

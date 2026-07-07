@@ -86,6 +86,15 @@ impl KeyboardPresentationController {
             return windows_key::post_presentation_key(window_id, key);
         }
 
+        #[cfg(target_os = "linux")]
+        if let Some(window_id) = window_id {
+            if crate::linux_gnome_extension::dbus_ping() {
+                crate::linux_gnome_extension::activate_window(window_id)
+                    .map_err(PresentationError::Input)?;
+                thread::sleep(Duration::from_millis(75));
+            }
+        }
+
         #[cfg(windows)]
         {
             let mut enigo = self

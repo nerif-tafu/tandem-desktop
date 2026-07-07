@@ -46,10 +46,7 @@ jobs:
       - name: Build shared package
         run: pnpm --filter @tandem/shared build
 
-      - name: Prepare Linux AppImage hook
-        run: bash scripts/linux/prepare-linux-bundle.sh
-
-      - name: Build AppImage
+      - name: Build Debian package
         env:
           NDI_SDK_DIR: ${{ runner.temp }}/ndi-sdk
         run: pnpm --filter @tandem/client exec tauri build && node scripts/linux/post-bundle-ndi.mjs
@@ -58,4 +55,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: remote-presenter-assist-linux-x86_64
-          path: apps/client/src-tauri/target/release/bundle/appimage/*.AppImage
+          path: apps/client/src-tauri/target/release/bundle/deb/*.deb

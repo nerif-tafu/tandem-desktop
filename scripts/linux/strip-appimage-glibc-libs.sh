@@ -35,6 +35,7 @@ LIBS=(
   libblkid.so.1
   libelf.so.1
   libudev.so.1
+  libpipewire-0.3.so.0
 )
 
 for lib in "${LIBS[@]}"; do

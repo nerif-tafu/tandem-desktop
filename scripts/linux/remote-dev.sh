@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Run Tandem from source on the Linux test machine (fast iteration, live logs).
+# Run Tandem from source on Linux (fast iteration — no AppImage/release build).
 set -euo pipefail
 
-ROOT="${TANDEM_ROOT:-$HOME/tandem-desktop-build}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${TANDEM_ROOT:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
 LOG="${TANDEM_DEV_LOG:-$HOME/tandem-dev.log}"
 
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"

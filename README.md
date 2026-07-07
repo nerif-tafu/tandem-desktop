@@ -13,6 +13,30 @@ pnpm dev
 
 You need a running Tandem server. In dev the app talks to `http://127.0.0.1:3841` by default. See [tandem-server](https://github.com/nerif-tafu/tandem-server) for how to run that locally.
 
+### Linux (Wayland / screen capture)
+
+Use the dev launcher instead of building a release package while iterating — `tauri dev` only recompiles changed Rust crates:
+
+```bash
+bash scripts/linux/dev.sh
+```
+
+Logs: `~/tandem-dev.log` (tail with `tail -f ~/tandem-dev.log`).
+
+Release builds target **Ubuntu 22.04+ / Debian 12+** as a `.deb`. Tauri links against system WebKit/GTK; `apt` installs runtime dependencies (GStreamer WebRTC, PipeWire, desktop portal) when you install the package:
+
+```bash
+sudo apt install ./Tandem-linux-amd64.deb
+```
+
+To test portal capture without the full UI:
+
+```bash
+bash scripts/linux/test-portal-capture.sh
+```
+
+That runs `cargo run --example portal-capture-probe` (seconds, not a release build).
+
 ## Build
 
 ```bash
@@ -37,7 +61,7 @@ The Release workflow uploads:
 |----------|-------|
 | Windows | `Tandem-windows-x64-setup.exe` (NSIS installer, includes NDI runtime) |
 | macOS | `Tandem-macos.dmg` (includes NDI when built with the NDI SDK for Apple) |
-| Linux | `Tandem-linux-x86_64.AppImage` |
+| Linux | `Tandem-linux-amd64.deb` (Ubuntu 22.04+ / Debian 12+) |
 
 ## Related repo
 

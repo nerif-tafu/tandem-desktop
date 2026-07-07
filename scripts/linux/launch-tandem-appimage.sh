@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Temporary launcher until v1.1.3 AppImage is installed. Use from the same folder as the AppImage.
+# Launcher for Tandem AppImage on Linux (WebKit + PipeWire compatibility).
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export LD_PRELOAD="${LD_PRELOAD:-/usr/lib/x86_64-linux-gnu/libwayland-client.so.0}"

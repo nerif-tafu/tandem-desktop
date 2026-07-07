@@ -2,6 +2,8 @@ mod frame_server;
 #[cfg(target_os = "linux")]
 mod linux_display_env;
 #[cfg(target_os = "linux")]
+mod linux_webcam;
+#[cfg(target_os = "linux")]
 pub mod linux_screen;
 mod macos_screen_permission;
 mod ndi;
@@ -24,6 +26,9 @@ pub(crate) fn disable_background_throttling() {
 }
 
 pub use preview::PreviewManager;
+
+#[cfg(target_os = "linux")]
+pub use frame_server::FrameSlot;
 pub use video_capture::{CaptureDiagnostics, VideoCaptureManager};
 
 #[cfg(target_os = "linux")]
