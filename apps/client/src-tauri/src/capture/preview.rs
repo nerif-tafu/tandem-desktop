@@ -258,7 +258,7 @@ fn find_monitor(monitor_id: u32) -> Result<Monitor, CaptureError> {
     }
 }
 
-fn open_webcam(source_id: &str) -> Result<nokhwa::Camera, CaptureError> {
+pub(crate) fn open_webcam(source_id: &str) -> Result<nokhwa::Camera, CaptureError> {
     use nokhwa::pixel_format::RgbFormat;
     use nokhwa::utils::{CameraFormat, FrameFormat, RequestedFormat, RequestedFormatType, Resolution};
 
@@ -271,20 +271,29 @@ fn open_webcam(source_id: &str) -> Result<nokhwa::Camera, CaptureError> {
         .get(index)
         .ok_or_else(|| CaptureError::SourceNotFound(source_id.to_string()))?;
 
-    let requested = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(CameraFormat::new(
-        Resolution::new(sources::PREVIEW_MAX_WIDTH, sources::PREVIEW_MAX_HEIGHT),
-        FrameFormat::MJPEG,
-        30,
-    )));
+    let preferred = Resolution::new(sources::PREVIEW_MAX_WIDTH, sources::PREVIEW_MAX_HEIGHT);
+    let candidates = [
+        RequestedFormatType::Closest(CameraFormat::new(preferred, FrameFormat::MJPEG, 30)),
+        RequestedFormatType::Closest(CameraFormat::new(preferred, FrameFormat::YUYV, 30)),
+        RequestedFormatType::AbsoluteHighestFrameRate,
+        RequestedFormatType::AbsoluteHighestResolution,
+    ];
 
-    let mut camera = nokhwa::Camera::new(camera_info.index().clone(), requested)
-        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    let mut last_error = None;
+    for requested_type in candidates {
+        let requested = RequestedFormat::new::<RgbFormat>(requested_type);
+        match nokhwa::Camera::new(camera_info.index().clone(), requested) {
+            Ok(mut camera) => match camera.open_stream() {
+                Ok(()) => return Ok(camera),
+                Err(error) => last_error = Some(error.to_string()),
+            },
+            Err(error) => last_error = Some(error.to_string()),
+        }
+    }
 
-    camera
-        .open_stream()
-        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
-
-    Ok(camera)
+    Err(CaptureError::CaptureFailed(
+        last_error.unwrap_or_else(|| "No usable webcam format".to_string()),
+    ))
 }
 
 fn capture_webcam_rgba(camera: &mut nokhwa::Camera) -> Result<RgbaImage, CaptureError> {

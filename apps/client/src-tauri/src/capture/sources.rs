@@ -291,29 +291,8 @@ fn capture_monitor_preview(source_id: &str) -> Result<String, CaptureError> {
 
 fn capture_webcam_preview(source_id: &str) -> Result<String, CaptureError> {
     use nokhwa::pixel_format::RgbFormat;
-    use nokhwa::utils::{CameraFormat, FrameFormat, RequestedFormat, RequestedFormatType, Resolution};
 
-    let index = parse_id_suffix(source_id, "webcam:")? as usize;
-
-    let cameras = nokhwa::query(nokhwa::utils::ApiBackend::Auto)
-        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
-
-    let camera_info = cameras
-        .get(index)
-        .ok_or_else(|| CaptureError::SourceNotFound(source_id.to_string()))?;
-
-    let requested = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(CameraFormat::new(
-        Resolution::new(PREVIEW_MAX_WIDTH, PREVIEW_MAX_HEIGHT),
-        FrameFormat::MJPEG,
-        30,
-    )));
-
-    let mut camera = nokhwa::Camera::new(camera_info.index().clone(), requested)
-        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
-
-    camera
-        .open_stream()
-        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+    let mut camera = super::preview::open_webcam(source_id)?;
 
     let frame = camera
         .frame()

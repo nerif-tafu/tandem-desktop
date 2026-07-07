@@ -1,6 +1,6 @@
 {
   "name": "@tandem/client",
-  "version": "1.1.9",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -13,6 +13,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@livekit/rtc-node": "^0.13.30",
     "@tandem/shared": "workspace:*",
     "@tauri-apps/api": "^2.5.0",
     "@tauri-apps/plugin-store": "^2.2.0",

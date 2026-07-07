@@ -18,4 +18,11 @@ commands.allow = [
   "start_slot_video",
   "stop_slot_video",
   "get_video_server_port",
+  "append_client_log",
+  "get_client_log_path",
+  "get_capture_diagnostics",
+  "get_presentation_extension_status",
+  "start_linux_livekit_publisher",
+  "sync_linux_livekit_publisher_slots",
+  "stop_linux_livekit_publisher",
 ]

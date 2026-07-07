@@ -4,6 +4,8 @@ mod logging;
 pub mod linux_appimage_env;
 #[cfg(target_os = "linux")]
 mod linux_gnome_extension;
+#[cfg(target_os = "linux")]
+mod linux_livekit_publisher;
 mod ndi_config;
 mod presentation;
 mod window_icon;
@@ -101,6 +103,12 @@ pub fn run() {
             get_client_log_path,
             get_capture_diagnostics,
             get_presentation_extension_status,
+            #[cfg(target_os = "linux")]
+            start_linux_livekit_publisher,
+            #[cfg(target_os = "linux")]
+            sync_linux_livekit_publisher_slots,
+            #[cfg(target_os = "linux")]
+            stop_linux_livekit_publisher,
         ])
         .setup(|app| {
             if let Ok(log_dir) = app.path().app_log_dir() {
@@ -141,6 +149,8 @@ pub fn run() {
                         .expect("failed to start local video stream server"),
                 ),
             );
+            #[cfg(target_os = "linux")]
+            app.manage(Mutex::new(linux_livekit_publisher::LinuxLiveKitPublisher::new()));
 
             if let Err(error) = window_icon::apply_window_icons(app.handle()) {
                 tracing::warn!(%error, "failed to apply window icon");
@@ -441,6 +451,43 @@ fn get_capture_diagnostics(
         .map_err(|_| "Video capture manager unavailable".to_string())?;
 
     Ok(guard.diagnostics())
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn start_linux_livekit_publisher(
+    url: String,
+    token: String,
+    publisher: tauri::State<'_, Mutex<linux_livekit_publisher::LinuxLiveKitPublisher>>,
+) -> Result<(), String> {
+    publisher
+        .lock()
+        .map_err(|_| "LiveKit publisher unavailable".to_string())?
+        .start(&url, &token)
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn sync_linux_livekit_publisher_slots(
+    slots: Vec<linux_livekit_publisher::LiveKitSlotConfig>,
+    publisher: tauri::State<'_, Mutex<linux_livekit_publisher::LinuxLiveKitPublisher>>,
+) -> Result<(), String> {
+    publisher
+        .lock()
+        .map_err(|_| "LiveKit publisher unavailable".to_string())?
+        .sync_slots(&slots)
+}
+
+#[cfg(target_os = "linux")]
+#[tauri::command]
+fn stop_linux_livekit_publisher(
+    publisher: tauri::State<'_, Mutex<linux_livekit_publisher::LinuxLiveKitPublisher>>,
+) -> Result<(), String> {
+    publisher
+        .lock()
+        .map_err(|_| "LiveKit publisher unavailable".to_string())?
+        .stop();
+    Ok(())
 }
 
 fn build_slot_state(

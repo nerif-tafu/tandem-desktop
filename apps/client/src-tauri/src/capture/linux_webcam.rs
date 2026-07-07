@@ -19,11 +19,13 @@ pub fn label_cameras(cameras: &[CameraInfo]) -> Vec<(usize, String)> {
         .enumerate()
         .map(|(index, camera)| CameraEntry {
             index,
+            device_node: device_node_number(camera).unwrap_or(u32::MAX),
             usb_key: resolve_usb_key(camera, index),
             label: resolve_label(camera, &usb_names),
         })
         .collect();
 
+    entries.sort_by_key(|entry| entry.device_node);
     let mut seen_usb_keys = HashSet::new();
     entries.retain(|entry| seen_usb_keys.insert(entry.usb_key.clone()));
 
@@ -38,8 +40,14 @@ pub fn label_cameras(cameras: &[CameraInfo]) -> Vec<(usize, String)> {
 
 struct CameraEntry {
     index: usize,
+    device_node: u32,
     usb_key: String,
     label: String,
+}
+
+fn device_node_number(camera: &CameraInfo) -> Option<u32> {
+    let path = device_path_from_description(camera.description())?;
+    path.strip_prefix("/dev/video")?.parse().ok()
 }
 
 fn resolve_usb_key(camera: &CameraInfo, index: usize) -> String {

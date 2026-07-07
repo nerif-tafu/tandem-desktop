@@ -4,7 +4,7 @@ mod windows_focus;
 mod windows_key;
 
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -28,6 +28,11 @@ pub struct KeyboardPresentationController {
     /// Enigo holds non-Send CoreGraphics state on macOS; keep it Windows-only in managed state.
     #[cfg(windows)]
     enigo: Mutex<Enigo>,
+    /// Cached input session. Creating it triggers the Wayland "Allow remote
+    /// interaction" portal prompt, so it is initialized when a target window
+    /// is selected rather than on the first key press.
+    #[cfg(target_os = "linux")]
+    enigo: Arc<Mutex<Option<Enigo>>>,
 }
 
 impl KeyboardPresentationController {
@@ -38,6 +43,8 @@ impl KeyboardPresentationController {
             enigo: Mutex::new(
                 Enigo::new(&Settings::default()).expect("keyboard controller should initialize"),
             ),
+            #[cfg(target_os = "linux")]
+            enigo: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -53,7 +60,36 @@ impl KeyboardPresentationController {
             .map_err(|_| PresentationError::Input("Keyboard controller is unavailable".into()))? =
             window_id;
 
+        #[cfg(target_os = "linux")]
+        if window_id.is_some() {
+            self.warm_linux_input_session();
+        }
+
         Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    fn warm_linux_input_session(&self) {
+        let enigo = self.enigo.clone();
+        thread::spawn(move || {
+            let Ok(mut guard) = enigo.lock() else {
+                return;
+            };
+
+            if guard.is_some() {
+                return;
+            }
+
+            match Enigo::new(&Settings::default()) {
+                Ok(instance) => {
+                    tracing::info!("presentation input session ready");
+                    *guard = Some(instance);
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to initialize presentation input session");
+                }
+            }
+        });
     }
 
     pub fn get_target(&self) -> Result<Option<String>, PresentationError> {
@@ -104,11 +140,48 @@ impl KeyboardPresentationController {
             send_enigo_key(&mut enigo, key)?;
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        {
+            let mut guard = self
+                .enigo
+                .lock()
+                .map_err(|_| PresentationError::Input("Keyboard controller is unavailable".into()))?;
+
+            if guard.is_none() {
+                *guard = Some(
+                    Enigo::new(&Settings::default())
+                        .map_err(|error| PresentationError::Input(error.to_string()))?,
+                );
+            }
+
+            let enigo = guard.as_mut().expect("input session initialized above");
+            if let Err(error) = send_cached_key(enigo, key) {
+                tracing::warn!(%error, "presentation key failed; rebuilding input session");
+                *guard = Some(
+                    Enigo::new(&Settings::default())
+                        .map_err(|error| PresentationError::Input(error.to_string()))?,
+                );
+                send_cached_key(guard.as_mut().expect("just replaced"), key)?;
+            }
+        }
+
+        #[cfg(not(any(windows, target_os = "linux")))]
         send_global_key(key)?;
 
         Ok(())
     }
+}
+
+#[cfg(target_os = "linux")]
+fn send_cached_key(enigo: &mut Enigo, key: Key) -> Result<(), PresentationError> {
+    enigo
+        .key(key, Direction::Press)
+        .map_err(|error| PresentationError::Input(error.to_string()))?;
+    enigo
+        .key(key, Direction::Release)
+        .map_err(|error| PresentationError::Input(error.to_string()))?;
+    tracing::info!(?key, "sent presentation key");
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -123,7 +196,7 @@ fn send_enigo_key(enigo: &mut Enigo, key: Key) -> Result<(), PresentationError> 
     Ok(())
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 fn send_global_key(key: Key) -> Result<(), PresentationError> {
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|error| PresentationError::Input(error.to_string()))?;
