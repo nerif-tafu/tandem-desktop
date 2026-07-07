@@ -1,6 +1,6 @@
 [package]
 name = "tandem-client"
-version = "1.1.7"
+version = "1.1.8"
 description = "Tandem desktop publisher client"
 authors = ["tafu.casa"]
 edition = "2021"
@@ -39,8 +39,12 @@ glib = "0.18"
 gtk = { version = "0.18", features = [] }
 
 [target.'cfg(windows)'.dependencies]
+# Keep in sync with the `windows` version used by windows-capture so we can call
+# D3D11 APIs on the textures it hands us (see capture/windows_video.rs).
 windows = { version = "0.62", features = [
   "Win32_Foundation",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Dxgi_Common",
   "Win32_Media",
   "Win32_System_Power",
   "Win32_System_Threading",

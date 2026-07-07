@@ -198,21 +198,32 @@ fn list_webcams() -> Result<Vec<CaptureSource>, CaptureError> {
         .collect())
 }
 
+#[cfg(windows)]
+pub(crate) fn capture_monitor_pixels(source_id: &str) -> Result<(u32, u32, Vec<u8>), CaptureError> {
+    let index = parse_id_suffix(source_id, "screen:")? as usize;
+    let monitor = xcap::Monitor::all()
+        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?
+        .into_iter()
+        .nth(index.saturating_sub(1))
+        .ok_or_else(|| CaptureError::SourceNotFound(source_id.to_string()))?;
+
+    let image = monitor
+        .capture_image()
+        .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+
+    Ok((image.width(), image.height(), image.into_raw()))
+}
+
 fn capture_monitor_preview(source_id: &str) -> Result<String, CaptureError> {
     super::macos_screen_permission::ensure_access();
 
     #[cfg(windows)]
     {
-        let index = parse_id_suffix(source_id, "screen:")? as usize;
-        let monitor = xcap::Monitor::all()
-            .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?
-            .into_iter()
-            .nth(index.saturating_sub(1))
-            .ok_or_else(|| CaptureError::SourceNotFound(source_id.to_string()))?;
-
-        let image = monitor
-            .capture_image()
-            .map_err(|error| CaptureError::CaptureFailed(error.to_string()))?;
+        let (width, height, pixels) = capture_monitor_pixels(source_id)?;
+        let image =
+            image::RgbaImage::from_raw(width, height, pixels).ok_or_else(|| {
+                CaptureError::CaptureFailed("invalid monitor capture dimensions".into())
+            })?;
 
         return encode_preview(image);
     }
