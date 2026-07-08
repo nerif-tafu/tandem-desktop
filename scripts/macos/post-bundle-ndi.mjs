@@ -41,5 +41,9 @@ for (const appName of readdirSync(bundleRoot).filter((name) => name.endsWith('.a
     }
   }
 
+  // install_name_tool invalidates the linker signature; re-sign so Gatekeeper
+  // does not report the app as "damaged" after download.
+  run('codesign', ['--force', '--deep', '--sign', '-', appPath]);
+
   console.log(`Fixed NDI dylib linking for ${appName}`);
 }
