@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
+if (process.platform !== 'linux') {
+  console.log('Skipping LiveKit sidecar bundle on non-Linux platforms.');
+  process.exit(0);
+}
+
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const sourceScript = join(root, 'apps/client/scripts/linux-livekit-publisher.mjs');
 const bundleDir = join(root, 'apps/client/src-tauri/livekit-sidecar');
