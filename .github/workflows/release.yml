@@ -235,6 +235,12 @@ jobs:
 
 
 
+      - name: Prepare LiveKit sidecar bundle
+
+        run: node scripts/linux/prepare-livekit-sidecar.mjs
+
+
+
       - name: Build Linux Debian package
 
         env:

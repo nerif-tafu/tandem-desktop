@@ -3,6 +3,7 @@ dist
 build
 .turbo
 *.log
+apps/client/src-tauri/livekit-sidecar/
 .env
 .env.local
 .DS_Store

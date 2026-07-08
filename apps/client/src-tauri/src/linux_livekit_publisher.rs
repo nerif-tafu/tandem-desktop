@@ -37,21 +37,26 @@ impl LinuxLiveKitPublisher {
         self.stop();
 
         let node = find_node_executable()?;
-        let script = resolve_script_path()?;
-        let client_dir = script
-            .parent()
-            .and_then(|scripts| scripts.parent())
-            .ok_or_else(|| "Could not resolve client directory for LiveKit sidecar".to_string())?;
+        let sidecar_dir = resolve_sidecar_dir()?;
+        let script = sidecar_dir.join("linux-livekit-publisher.mjs");
+
+        if !script.is_file() {
+            return Err(format!(
+                "LiveKit sidecar script not found at {}",
+                script.display()
+            ));
+        }
 
         tracing::info!(
             node = %node.display(),
             script = %script.display(),
+            sidecar_dir = %sidecar_dir.display(),
             "starting linux livekit publisher sidecar"
         );
 
         let mut child = Command::new(&node)
             .arg(&script)
-            .current_dir(client_dir)
+            .current_dir(&sidecar_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::inherit())
@@ -63,10 +68,7 @@ impl LinuxLiveKitPublisher {
             .take()
             .ok_or_else(|| "LiveKit sidecar stdin unavailable".to_string())?;
 
-        write_message(
-            &mut stdin,
-            &SidecarMessage::Start { url, token },
-        )?;
+        write_message(&mut stdin, &SidecarMessage::Start { url, token })?;
 
         self.stdin = Some(stdin);
         self.child = Some(child);
@@ -130,21 +132,42 @@ fn find_node_executable() -> Result<PathBuf, String> {
         }
     }
 
-    Err("Node.js executable not found (install node 18+)".to_string())
+    Err("Node.js executable not found (install the nodejs package)".to_string())
 }
 
-fn resolve_script_path() -> Result<PathBuf, String> {
-    let dev_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../scripts/linux-livekit-publisher.mjs");
-
-    if dev_path.is_file() {
-        return dev_path
-            .canonicalize()
-            .map_err(|error| format!("Failed to resolve LiveKit sidecar script: {error}"));
+fn resolve_sidecar_dir() -> Result<PathBuf, String> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for candidate in [
+                dir.join("../lib/Tandem/livekit-sidecar"),
+                dir.join("../lib/tandem-client/livekit-sidecar"),
+                dir.join("livekit-sidecar"),
+            ] {
+                if candidate.join("linux-livekit-publisher.mjs").is_file() {
+                    return candidate
+                        .canonicalize()
+                        .map_err(|error| format!("Failed to resolve LiveKit sidecar dir: {error}"));
+                }
+            }
+        }
     }
 
-    Err(format!(
-        "LiveKit sidecar script not found at {}",
-        dev_path.display()
-    ))
+    let dev_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("livekit-sidecar");
+    if dev_dir.join("linux-livekit-publisher.mjs").is_file() {
+        return dev_dir
+            .canonicalize()
+            .map_err(|error| format!("Failed to resolve LiveKit sidecar dir: {error}"));
+    }
+
+    let dev_script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scripts/linux-livekit-publisher.mjs");
+    if dev_script.is_file() {
+        let parent = dev_script
+            .parent()
+            .ok_or_else(|| "Could not resolve dev LiveKit sidecar directory".to_string())?;
+        return parent
+            .canonicalize()
+            .map_err(|error| format!("Failed to resolve LiveKit sidecar dir: {error}"));
+    }
+
+    Err("Bundled LiveKit sidecar files were not found".to_string())
 }

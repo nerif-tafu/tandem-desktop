@@ -80,7 +80,10 @@ export function useLiveKitPublisher(
             setConnectionState('connected');
           }
         } catch (error) {
-          const message = describeLiveKitConnectFailure(error);
+          const message =
+            error instanceof Error && error.message
+              ? error.message
+              : describeLiveKitConnectFailure(error);
           console.error('LiveKit sidecar publisher connect failed', error);
           void appendClientLog(
             `[livekit] sidecar connect failed room=${roomCode} error=${message}`,
