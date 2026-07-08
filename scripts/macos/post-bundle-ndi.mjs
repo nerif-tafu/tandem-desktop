@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,52 +12,133 @@ if (process.platform !== 'darwin') {
   process.exit(0);
 }
 
-if (!existsSync(bundleRoot)) {
-  console.warn(`macOS bundle directory not found: ${bundleRoot}`);
-  process.exit(0);
+function run(command, args, inherit = true) {
+  return execFileSync(command, args, {
+    stdio: inherit ? 'inherit' : ['inherit', 'pipe', 'inherit'],
+    encoding: inherit ? undefined : 'utf8',
+  });
 }
 
-function run(command, args) {
-  execFileSync(command, args, { stdio: 'inherit' });
+function findDmgPath() {
+  if (!existsSync(dmgDir)) {
+    return null;
+  }
+
+  const dmgName = readdirSync(dmgDir).find((name) => name.endsWith('.dmg'));
+  return dmgName ? join(dmgDir, dmgName) : null;
 }
 
-for (const appName of readdirSync(bundleRoot).filter((name) => name.endsWith('.app'))) {
-  const appPath = join(bundleRoot, appName);
+function findBundledAppPath() {
+  if (!existsSync(bundleRoot)) {
+    return null;
+  }
+
+  const appName = readdirSync(bundleRoot).find((name) => name.endsWith('.app'));
+  return appName ? join(bundleRoot, appName) : null;
+}
+
+function extractAppFromDmg(dmgPath) {
+  const attachOutput = String(run('hdiutil', ['attach', dmgPath, '-nobrowse', '-noverify', '-noautoopen'], false));
+  const mountPoint = attachOutput
+    .split('\n')
+    .map((line) => line.split('\t').at(-1)?.trim())
+    .find((line) => line?.startsWith('/Volumes/'));
+
+  if (!mountPoint) {
+    throw new Error(`Could not mount dmg at ${dmgPath}`);
+  }
+
+  try {
+    const appName = readdirSync(mountPoint).find((name) => name.endsWith('.app'));
+    if (!appName) {
+      throw new Error(`No .app bundle found inside ${mountPoint}`);
+    }
+
+    const staging = mkdtempSync(join(tmpdir(), 'tandem-macos-'));
+    const appPath = join(staging, appName);
+    cpSync(join(mountPoint, appName), appPath, { recursive: true });
+    return { appPath, appName, staging };
+  } finally {
+    run('hdiutil', ['detach', mountPoint, '-quiet']);
+  }
+}
+
+function fixNdiAndSign(appPath) {
   const macOsDir = join(appPath, 'Contents', 'MacOS');
   const frameworksDir = join(appPath, 'Contents', 'Frameworks');
   const dylibPath = join(frameworksDir, 'libndi.dylib');
+  const executablePath = join(macOsDir, 'tandem-client');
 
   if (!existsSync(dylibPath)) {
-    console.warn(`Skipping ${appName}: libndi.dylib not found in Frameworks`);
-    continue;
+    console.warn(`Skipping codesign: libndi.dylib not found in ${frameworksDir}`);
+    return;
   }
 
   run('install_name_tool', ['-id', '@rpath/libndi.dylib', dylibPath]);
 
-  for (const binaryName of readdirSync(macOsDir)) {
-    const binaryPath = join(macOsDir, binaryName);
+  if (existsSync(executablePath)) {
     try {
-      run('install_name_tool', ['-add_rpath', '@executable_path/../Frameworks', binaryPath]);
+      run('install_name_tool', ['-add_rpath', '@executable_path/../Frameworks', executablePath]);
     } catch {
       // rpath may already exist
     }
   }
 
-  // install_name_tool invalidates the linker signature; re-sign so Gatekeeper
-  // does not report the app as "damaged" after download.
-  run('codesign', ['--force', '--deep', '--sign', '-', appPath]);
+  // install_name_tool invalidates signatures; sign inside-out so Gatekeeper accepts the bundle.
+  run('codesign', ['--force', '--sign', '-', dylibPath]);
+  if (existsSync(executablePath)) {
+    run('codesign', ['--force', '--sign', '-', executablePath]);
+  }
+  run('codesign', ['--force', '--sign', '-', appPath]);
+}
 
-  // tauri build creates the dmg before this script runs; rebuild it from the
-  // fixed .app so release artifacts contain the re-signed bundle.
-  if (existsSync(dmgDir)) {
-    for (const dmgName of readdirSync(dmgDir).filter((name) => name.endsWith('.dmg'))) {
-      rmSync(join(dmgDir, dmgName));
-    }
+function rebuildDmg(appPath, dmgPath) {
+  rmSync(dmgPath, { force: true });
+  run('hdiutil', [
+    'create',
+    '-volname',
+    'Tandem',
+    '-srcfolder',
+    appPath,
+    '-ov',
+    '-format',
+    'UDZO',
+    dmgPath,
+  ]);
+}
 
-    const dmgPath = join(dmgDir, 'Tandem-macos.dmg');
-    run('hdiutil', ['create', '-volname', 'Tandem', '-srcfolder', appPath, '-ov', '-format', 'UDZO', dmgPath]);
-    console.log(`Rebuilt ${dmgPath} from re-signed ${appName}`);
+function resolveAppBundle() {
+  const bundledAppPath = findBundledAppPath();
+  if (bundledAppPath) {
+    return { appPath: bundledAppPath, cleanup: null };
   }
 
-  console.log(`Fixed NDI dylib linking for ${appName}`);
+  const dmgPath = findDmgPath();
+  if (!dmgPath) {
+    console.warn('No macOS .app or .dmg found to post-process');
+    process.exit(0);
+  }
+
+  // Tauri deletes bundle/macos after creating the dmg, so extract the app from the dmg.
+  const extracted = extractAppFromDmg(dmgPath);
+  return {
+    appPath: extracted.appPath,
+    cleanup: () => rmSync(extracted.staging, { recursive: true, force: true }),
+  };
+}
+
+const dmgPath = findDmgPath();
+if (!dmgPath) {
+  console.warn(`No macOS dmg found in ${dmgDir}`);
+  process.exit(0);
+}
+
+const { appPath, cleanup } = resolveAppBundle();
+
+try {
+  fixNdiAndSign(appPath);
+  rebuildDmg(appPath, dmgPath);
+  console.log(`Re-signed ${appPath} and rebuilt ${dmgPath}`);
+} finally {
+  cleanup?.();
 }
